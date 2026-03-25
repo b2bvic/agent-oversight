@@ -1,0 +1,75 @@
+#!/bin/bash
+# agent-monitor — Track running Claude agents and session token usage
+# 🌐 Victor Valentine Romo · victorvalentineromo.com · scalewithsearch.com
+#
+# Usage: agent-monitor [output-file]
+# Run on-demand or via cron/launchd every 5 minutes.
+
+OUTPUT="${1:-./claude-agents.md}"
+
+# Auto-detect project dir (most recently modified project)
+PROJECT_DIR=$(find "$HOME/.claude/projects" -maxdepth 1 -type d ! -name ".*" 2>/dev/null | head -1)
+[ -z "$PROJECT_DIR" ] && PROJECT_DIR="$HOME/.claude/projects"
+DATE=$(date +%Y.%m.%d)
+TIME=$(date +%H:%M)
+
+# ═══ RUNNING CLAUDE PROCESSES ═══
+AGENT_COUNT=0
+PROC_ROWS=""
+
+while IFS= read -r line; do
+  [ -z "$line" ] && continue
+  PID=$(echo "$line" | awk '{print $2}')
+  CPU=$(echo "$line" | awk '{print $3}')
+  MEM=$(echo "$line" | awk '{print $4}')
+  ELAPSED=$(ps -o etime= -p "$PID" 2>/dev/null | xargs)
+  [ -z "$ELAPSED" ] && ELAPSED="?"
+  # Extract command args (truncated to 50 chars)
+  CMD=$(echo "$line" | awk '{for(i=11;i<=NF && i<=16;i++) printf "%s ", $i}')
+  CMD=$(echo "$CMD" | sed 's/^ *//;s/ *$//' | cut -c1-50)
+  PROC_ROWS="${PROC_ROWS}| ${PID} | ${CPU}% | ${MEM}% | ${ELAPSED} | ${CMD} |
+"
+  AGENT_COUNT=$((AGENT_COUNT + 1))
+done < <(ps aux | grep '[c]laude' | grep -v 'agent-monitor')
+
+# ═══ TOKEN USAGE (today's sessions for this vault) ═══
+TOTAL_IN=0
+TOTAL_OUT=0
+SESSION_COUNT=0
+
+if [ -d "$PROJECT_DIR" ]; then
+  for jsonl in $(find "$PROJECT_DIR" -name "*.jsonl" -mtime 0 -type f 2>/dev/null); do
+    SESSION_COUNT=$((SESSION_COUNT + 1))
+    # Fast token extraction via grep (no jq dependency, handles large files)
+    IN=$(grep -o '"input_tokens":[0-9]*' "$jsonl" 2>/dev/null | awk -F: '{s+=$2} END {print s+0}')
+    OUT=$(grep -o '"output_tokens":[0-9]*' "$jsonl" 2>/dev/null | awk -F: '{s+=$2} END {print s+0}')
+    TOTAL_IN=$((TOTAL_IN + ${IN:-0}))
+    TOTAL_OUT=$((TOTAL_OUT + ${OUT:-0}))
+  done
+fi
+
+TOTAL_TOKENS=$((TOTAL_IN + TOTAL_OUT))
+
+# ═══ WRITE ═══
+cat > "$OUTPUT" << EOF
+type:: agents
+updated:: ${DATE} ${TIME}
+agent_count:: ${AGENT_COUNT}
+session_count:: ${SESSION_COUNT}
+tokens_in:: ${TOTAL_IN}
+tokens_out:: ${TOTAL_OUT}
+tokens_total:: ${TOTAL_TOKENS}
+
+---
+
+# Agent Monitor
+
+## Running: ${AGENT_COUNT}
+
+| PID | CPU | MEM | Uptime | Command |
+|-----|-----|-----|--------|---------|
+${PROC_ROWS}
+## Today: ${SESSION_COUNT} sessions · ${TOTAL_TOKENS} tokens (${TOTAL_IN} in / ${TOTAL_OUT} out)
+EOF
+
+echo "Agent monitor: ${AGENT_COUNT} running, ${SESSION_COUNT} sessions, ${TOTAL_TOKENS} tokens"
