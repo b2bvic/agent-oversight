@@ -1,50 +1,25 @@
 # agent-monitor
 
-Track running Claude Code processes and session token usage. Outputs a markdown dashboard.
+A local process and session-usage monitor that writes a Markdown status file.
 
-Built by [Victor Valentine Romo](https://victorvalentineromo.com) at [Scale With Search](https://scalewithsearch.com).
+## Principle cluster
 
-## Usage
+This repository demonstrates **P10 (production means persistence, bounded autonomy, and observability)** because it assembles process counts, resource fields, session counts, and token totals in one generated document.
 
-```bash
-# Write dashboard to default file
-agent-monitor
+[Read the principles](https://victorvalentineromo.com/principles).
 
-# Write to specific path
-agent-monitor ~/Desktop/agents.md
-
-# Run every 5 minutes via cron
-*/5 * * * * ~/.local/bin/agent-monitor
-```
-
-## Output
-
-```markdown
-# Agent Monitor
-
-## Running: 2
-
-| PID | CPU | MEM | Uptime | Command |
-|-----|-----|-----|--------|---------|
-| 12345 | 3.2% | 1.1% | 01:23 | claude --project ... |
-
-## Today: 5 sessions · 142,000 tokens (98,000 in / 44,000 out)
-```
-
-## How It Works
-
-- Detects running `claude` processes with CPU/MEM/uptime
-- Scans today's session JSONL files for token usage
-- Writes formatted markdown with frontmatter (Dataview-compatible)
-- Cross-platform: macOS and Linux
-
-## Install
+## Worked example
 
 ```bash
-curl -o ~/.local/bin/agent-monitor https://raw.githubusercontent.com/b2bvic/agent-monitor/main/agent-monitor
-chmod +x ~/.local/bin/agent-monitor
+./agent-monitor ./status.md
 ```
 
 ## License
 
-MIT
+MIT.
+
+## How this was built
+
+This 2026 README refit used model assistance.
+
+No claim is made about how the underlying code was authored or reviewed.
