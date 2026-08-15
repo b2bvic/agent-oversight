@@ -7,7 +7,7 @@
 
 OUTPUT="${1:-./claude-agents.md}"
 
-# Auto-detect project dir (most recently modified project)
+# Select the first project directory returned by the filesystem.
 PROJECT_DIR=$(find "$HOME/.claude/projects" -maxdepth 1 -type d ! -name ".*" 2>/dev/null | head -1)
 [ -z "$PROJECT_DIR" ] && PROJECT_DIR="$HOME/.claude/projects"
 DATE=$(date +%Y.%m.%d)
@@ -32,7 +32,7 @@ while IFS= read -r line; do
   AGENT_COUNT=$((AGENT_COUNT + 1))
 done < <(ps aux | grep '[c]laude' | grep -v 'agent-monitor')
 
-# ═══ TOKEN USAGE (today's sessions for this vault) ═══
+# ═══ TOKEN USAGE (files modified during the last 24 hours) ═══
 TOTAL_IN=0
 TOTAL_OUT=0
 SESSION_COUNT=0
@@ -69,7 +69,7 @@ tokens_total:: ${TOTAL_TOKENS}
 | PID | CPU | MEM | Uptime | Command |
 |-----|-----|-----|--------|---------|
 ${PROC_ROWS}
-## Today: ${SESSION_COUNT} sessions · ${TOTAL_TOKENS} tokens (${TOTAL_IN} in / ${TOTAL_OUT} out)
+## Last 24 hours: ${SESSION_COUNT} sessions · ${TOTAL_TOKENS} tokens (${TOTAL_IN} in / ${TOTAL_OUT} out)
 EOF
 
 echo "Agent monitor: ${AGENT_COUNT} running, ${SESSION_COUNT} sessions, ${TOTAL_TOKENS} tokens"

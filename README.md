@@ -2,6 +2,10 @@
 
 A local process and session-usage monitor that writes a Markdown status file.
 
+It reports processes whose command contains `claude`. Session totals come from
+JSONL files modified during the previous 24 hours under the first project
+directory returned by the filesystem. They are not calendar-day totals.
+
 ## Principle cluster
 
 This repository demonstrates **P10 (production means persistence, bounded autonomy, and observability)** because it assembles process counts, resource fields, session counts, and token totals in one generated document.
