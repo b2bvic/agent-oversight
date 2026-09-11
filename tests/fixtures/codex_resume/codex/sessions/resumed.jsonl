@@ -1,0 +1,4 @@
+{"timestamp":"2026-01-15T12:00:00Z","type":"token_count","input_tokens":100,"output_tokens":10,"cached_input_tokens":50}
+{"timestamp":"2026-01-15T12:01:00Z","type":"token_count","input_tokens":150,"output_tokens":20,"cached_input_tokens":70}
+{"timestamp":"2026-01-15T12:02:00Z","type":"token_count","input_tokens":40,"output_tokens":5,"cached_input_tokens":10}
+{"timestamp":"2026-01-15T12:03:00Z","type":"token_count","input_tokens":90,"output_tokens":15,"cached_input_tokens":25}

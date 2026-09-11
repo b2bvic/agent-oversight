@@ -1,75 +1,1407 @@
-#!/bin/bash
-# agent-monitor — Track running Claude agents and session token usage
-# 🌐 Victor Valentine Romo · victorvalentineromo.com · scalewithsearch.com
-#
-# Usage: agent-monitor [output-file]
-# Run on-demand or via cron/launchd every 5 minutes.
+#!/usr/bin/env python3
+# agent-monitor — local Claude and Codex process and token-usage observer
+# Requires Python 3.11+. Version 0.2.0 (unreleased).
+"""Observe running Claude/Codex processes and recorded token usage.
 
-OUTPUT="${1:-./claude-agents.md}"
+Reads local session JSONL only. Selects usage by event timestamps, not file
+mtime. Does not estimate cost.
+"""
 
-# Select the first project directory returned by the filesystem.
-PROJECT_DIR=$(find "$HOME/.claude/projects" -maxdepth 1 -type d ! -name ".*" 2>/dev/null | head -1)
-[ -z "$PROJECT_DIR" ] && PROJECT_DIR="$HOME/.claude/projects"
-DATE=$(date +%Y.%m.%d)
-TIME=$(date +%H:%M)
+from __future__ import annotations
 
-# ═══ RUNNING CLAUDE PROCESSES ═══
-AGENT_COUNT=0
-PROC_ROWS=""
+import argparse
+import json
+import math
+import os
+import shlex
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Iterable, Iterator, Mapping, Sequence
 
-while IFS= read -r line; do
-  [ -z "$line" ] && continue
-  PID=$(echo "$line" | awk '{print $2}')
-  CPU=$(echo "$line" | awk '{print $3}')
-  MEM=$(echo "$line" | awk '{print $4}')
-  ELAPSED=$(ps -o etime= -p "$PID" 2>/dev/null | xargs)
-  [ -z "$ELAPSED" ] && ELAPSED="?"
-  # Extract command args (truncated to 50 chars)
-  CMD=$(echo "$line" | awk '{for(i=11;i<=NF && i<=16;i++) printf "%s ", $i}')
-  CMD=$(echo "$CMD" | sed 's/^ *//;s/ *$//' | cut -c1-50)
-  PROC_ROWS="${PROC_ROWS}| ${PID} | ${CPU}% | ${MEM}% | ${ELAPSED} | ${CMD} |
-"
-  AGENT_COUNT=$((AGENT_COUNT + 1))
-done < <(ps aux | grep '[c]laude' | grep -v 'agent-monitor')
+VERSION = "0.2.0"
+DEFAULT_OUTPUT = "claude-agents.md"
+DEFAULT_HOURS = 24.0
+UTC = timezone.utc
 
-# ═══ TOKEN USAGE (files modified during the last 24 hours) ═══
-TOTAL_IN=0
-TOTAL_OUT=0
-SESSION_COUNT=0
+CLAUDE_NAMES = frozenset({"claude"})
+CODEX_NAMES = frozenset({"codex"})
+AGENT_NAMES = CLAUDE_NAMES | CODEX_NAMES
+SELF_NAMES = frozenset({"agent-monitor", "agent_monitor.py", "agent-monitor-macos-arm64"})
 
-if [ -d "$PROJECT_DIR" ]; then
-  for jsonl in $(find "$PROJECT_DIR" -name "*.jsonl" -mtime 0 -type f 2>/dev/null); do
-    SESSION_COUNT=$((SESSION_COUNT + 1))
-    # Fast token extraction via grep (no jq dependency, handles large files)
-    IN=$(grep -o '"input_tokens":[0-9]*' "$jsonl" 2>/dev/null | awk -F: '{s+=$2} END {print s+0}')
-    OUT=$(grep -o '"output_tokens":[0-9]*' "$jsonl" 2>/dev/null | awk -F: '{s+=$2} END {print s+0}')
-    TOTAL_IN=$((TOTAL_IN + ${IN:-0}))
-    TOTAL_OUT=$((TOTAL_OUT + ${OUT:-0}))
-  done
-fi
+INTERPRETERS = frozenset({
+    "node",
+    "nodejs",
+    "deno",
+    "bun",
+    "python",
+    "python3",
+    "ruby",
+    "perl",
+    "bash",
+    "sh",
+    "zsh",
+    "fish",
+    "dash",
+    "ksh",
+})
+INLINE_CODE_FLAGS = frozenset({"-c", "-e", "--eval", "-m", "--module"})
 
-TOTAL_TOKENS=$((TOTAL_IN + TOTAL_OUT))
+CLAUDE_PATH_MARKERS = (
+    "/@anthropic-ai/claude-code/",
+    "/node_modules/@anthropic-ai/claude-code/",
+)
+CODEX_PATH_MARKERS = (
+    "/@openai/codex/",
+    "/node_modules/@openai/codex/",
+    "/@openai/codex-cli/",
+)
 
-# ═══ WRITE ═══
-cat > "$OUTPUT" << EOF
-type:: agents
-updated:: ${DATE} ${TIME}
-agent_count:: ${AGENT_COUNT}
-session_count:: ${SESSION_COUNT}
-tokens_in:: ${TOTAL_IN}
-tokens_out:: ${TOTAL_OUT}
-tokens_total:: ${TOTAL_TOKENS}
+CLAUDE_SKIP_TYPES = frozenset({
+    "user",
+    "system",
+    "attachment",
+    "file-history-snapshot",
+    "progress",
+    "hook_response",
+    "queue-operation",
+    "queued_command",
+    "summary",
+    "tag",
+    "last-prompt",
+    "result",
+})
+USAGE_HINT_KEYS = frozenset({
+    "usage",
+    "token_count",
+    "token_usage",
+    "tokens",
+    "input_tokens",
+    "output_tokens",
+    "cached_input_tokens",
+    "cache_creation_input_tokens",
+    "cache_read_input_tokens",
+    "reasoning_output_tokens",
+    "total_token_usage",
+    "last_token_usage",
+})
+TOKEN_FIELD_NAMES = (
+    "input_tokens",
+    "output_tokens",
+    "cache_creation_input_tokens",
+    "cache_read_input_tokens",
+    "cached_input_tokens",
+    "reasoning_output_tokens",
+    "input",
+    "output",
+    "cached",
+)
 
----
 
-# Agent Monitor
+@dataclass
+class TokenUsage:
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_creation_input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    cached_input_tokens: int = 0
+    reasoning_output_tokens: int = 0
 
-## Running: ${AGENT_COUNT}
+    def add(self, other: TokenUsage) -> None:
+        self.input_tokens += other.input_tokens
+        self.output_tokens += other.output_tokens
+        self.cache_creation_input_tokens += other.cache_creation_input_tokens
+        self.cache_read_input_tokens += other.cache_read_input_tokens
+        self.cached_input_tokens += other.cached_input_tokens
+        self.reasoning_output_tokens += other.reasoning_output_tokens
 
-| PID | CPU | MEM | Uptime | Command |
-|-----|-----|-----|--------|---------|
-${PROC_ROWS}
-## Last 24 hours: ${SESSION_COUNT} sessions · ${TOTAL_TOKENS} tokens (${TOTAL_IN} in / ${TOTAL_OUT} out)
-EOF
+    def minus_clamped(self, other: TokenUsage) -> TokenUsage:
+        return TokenUsage(
+            input_tokens=max(0, self.input_tokens - other.input_tokens),
+            output_tokens=max(0, self.output_tokens - other.output_tokens),
+            cache_creation_input_tokens=max(
+                0, self.cache_creation_input_tokens - other.cache_creation_input_tokens
+            ),
+            cache_read_input_tokens=max(
+                0, self.cache_read_input_tokens - other.cache_read_input_tokens
+            ),
+            cached_input_tokens=max(0, self.cached_input_tokens - other.cached_input_tokens),
+            reasoning_output_tokens=max(
+                0, self.reasoning_output_tokens - other.reasoning_output_tokens
+            ),
+        )
 
-echo "Agent monitor: ${AGENT_COUNT} running, ${SESSION_COUNT} sessions, ${TOTAL_TOKENS} tokens"
+    def input_reset(self, previous: TokenUsage) -> bool:
+        return self.input_tokens < previous.input_tokens
+
+    def billed_tokens(self) -> int:
+        """Uncached input plus output. Cache fields stay out of this total."""
+        return self.input_tokens + self.output_tokens
+
+    def has_counts(self) -> bool:
+        return any((
+            self.input_tokens,
+            self.output_tokens,
+            self.cache_creation_input_tokens,
+            self.cache_read_input_tokens,
+            self.cached_input_tokens,
+            self.reasoning_output_tokens,
+        ))
+
+
+@dataclass
+class MonitorError:
+    kind: str
+    message: str
+    provider: str | None = None
+    path: str | None = None
+    line: int | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        data: dict[str, Any] = {"kind": self.kind, "message": self.message}
+        if self.provider is not None:
+            data["provider"] = self.provider
+        if self.path is not None:
+            data["path"] = self.path
+        if self.line is not None:
+            data["line"] = self.line
+        return data
+
+
+@dataclass
+class Coverage:
+    status: str
+    detail: str = ""
+
+    def as_dict(self) -> dict[str, str]:
+        data = {"status": self.status}
+        if self.detail:
+            data["detail"] = self.detail
+        return data
+
+
+@dataclass
+class ProcessRow:
+    pid: int
+    provider: str
+    cpu: str
+    mem: str
+    etime: str
+    command: str
+    comm: str = ""
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "pid": self.pid,
+            "provider": self.provider,
+            "cpu": self.cpu,
+            "mem": self.mem,
+            "etime": self.etime,
+            "command": self.command,
+        }
+
+
+@dataclass
+class ProviderUsage:
+    observed: bool
+    sessions: int | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_creation_input_tokens: int | None = None
+    cache_read_input_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    reasoning_output_tokens: int | None = None
+
+    def as_dict(self, provider: str) -> dict[str, Any]:
+        if not self.observed:
+            return {"observed": False}
+        data: dict[str, Any] = {
+            "observed": True,
+            "sessions": self.sessions,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+        }
+        if provider == "claude":
+            data["cache_creation_input_tokens"] = self.cache_creation_input_tokens
+            data["cache_read_input_tokens"] = self.cache_read_input_tokens
+        else:
+            data["cached_input_tokens"] = self.cached_input_tokens
+            data["reasoning_output_tokens"] = self.reasoning_output_tokens
+        return data
+
+
+@dataclass
+class Report:
+    version: str
+    observed_at: datetime
+    hours: float
+    roots: dict[str, str]
+    coverage: dict[str, Coverage]
+    errors: list[MonitorError] = field(default_factory=list)
+    processes: list[ProcessRow] = field(default_factory=list)
+    usage: dict[str, ProviderUsage] = field(default_factory=dict)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "version": self.version,
+            "observed_at": self.observed_at.isoformat(),
+            "hours": self.hours,
+            "roots": dict(self.roots),
+            "coverage": {key: value.as_dict() for key, value in self.coverage.items()},
+            "errors": [item.as_dict() for item in self.errors],
+            "processes": [item.as_dict() for item in self.processes],
+            "usage": {
+                name: payload.as_dict(name) for name, payload in self.usage.items()
+            },
+        }
+
+
+class InvalidUsage(Exception):
+    """A record advertised usage fields that could not be parsed."""
+
+
+def require_python() -> None:
+    if sys.version_info < (3, 11):
+        sys.stderr.write("agent-monitor 0.2.0 requires Python 3.11+\n")
+        raise SystemExit(2)
+
+
+def default_claude_root() -> Path:
+    return Path.home() / ".claude" / "projects"
+
+
+def default_codex_root() -> Path:
+    return Path.home() / ".codex"
+
+
+def parse_timestamp(value: object) -> datetime | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        ts = float(value)
+        if ts > 1e12:
+            ts /= 1000.0
+        try:
+            return datetime.fromtimestamp(ts, tz=UTC)
+        except (OSError, OverflowError, ValueError):
+            return None
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if text.endswith("Z") or text.endswith("z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def event_timestamp(record: Mapping[str, Any]) -> datetime | None:
+    for key in ("timestamp", "ts", "created_at", "time"):
+        if key in record:
+            parsed = parse_timestamp(record.get(key))
+            if parsed is not None:
+                return parsed
+    return None
+
+
+def parse_token_int(value: object) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, float):
+        if value >= 0 and value.is_integer():
+            return int(value)
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if text.isdigit():
+            return int(text)
+    return None
+
+
+def _field_present(mapping: Mapping[str, Any], *names: str) -> bool:
+    return any(name in mapping for name in names)
+
+
+def usage_from_mapping(mapping: object) -> TokenUsage | None:
+    if not isinstance(mapping, Mapping):
+        raise InvalidUsage("usage is not an object")
+    advertised = _field_present(mapping, *TOKEN_FIELD_NAMES)
+    if not advertised:
+        return None
+    values: dict[str, int] = {}
+    aliases = {
+        "input_tokens": ("input_tokens", "input"),
+        "output_tokens": ("output_tokens", "output"),
+        "cache_creation_input_tokens": ("cache_creation_input_tokens",),
+        "cache_read_input_tokens": ("cache_read_input_tokens",),
+        "cached_input_tokens": ("cached_input_tokens", "cached"),
+        "reasoning_output_tokens": ("reasoning_output_tokens",),
+    }
+    for field_name, keys in aliases.items():
+        if not _field_present(mapping, *keys):
+            continue
+        raw = None
+        for key in keys:
+            if key in mapping:
+                raw = mapping[key]
+                break
+        parsed = parse_token_int(raw)
+        if parsed is None:
+            raise InvalidUsage(f"invalid {field_name}")
+        values[field_name] = parsed
+    if not values:
+        raise InvalidUsage("usage fields were present but unreadable")
+    return TokenUsage(**values)
+
+
+def in_window(moment: datetime, start: datetime, end: datetime) -> bool:
+    return start <= moment <= end
+
+
+def posix_path(text: str) -> str:
+    return text.replace("\\", "/")
+
+
+def basename_of(text: str) -> str:
+    return Path(posix_path(text.rstrip("/"))).name
+
+
+def is_interpreter(name: str) -> bool:
+    folded = name.casefold()
+    if folded in INTERPRETERS:
+        return True
+    return folded.startswith("python")
+
+
+def split_command(command: str | Sequence[str] | None) -> list[str]:
+    if command is None:
+        return []
+    if isinstance(command, (list, tuple)):
+        return [str(part) for part in command if str(part)]
+    text = str(command).strip()
+    if not text:
+        return []
+    try:
+        return shlex.split(text, posix=True)
+    except ValueError:
+        return text.split()
+
+
+def first_script_arg(argv: Sequence[str]) -> str | None:
+    index = 1
+    while index < len(argv):
+        arg = argv[index]
+        if arg in INLINE_CODE_FLAGS:
+            return None
+        if arg.startswith("-"):
+            index += 1
+            continue
+        return arg
+    return None
+
+
+def provider_from_executable_name(name: str) -> str | None:
+    folded = basename_of(name).casefold()
+    if folded.endswith(".exe"):
+        folded = folded[:-4]
+    if folded in CLAUDE_NAMES:
+        return "claude"
+    if folded in CODEX_NAMES:
+        return "codex"
+    return None
+
+
+def provider_from_script_path(script: str) -> str | None:
+    named = provider_from_executable_name(script)
+    if named:
+        return named
+    normalized = posix_path(script).casefold()
+    if any(marker in normalized for marker in CLAUDE_PATH_MARKERS):
+        return "claude"
+    if any(marker in normalized for marker in CODEX_PATH_MARKERS):
+        return "codex"
+    return None
+
+
+def match_agent_process(comm: str, command: str | Sequence[str] | None) -> str | None:
+    """Return 'claude' or 'codex' when the executable boundary matches.
+
+    Command-line substrings such as `grep claude` do not match.
+    """
+    argv = split_command(command)
+    comm_name = basename_of(comm) if comm else ""
+    if comm_name.casefold() in SELF_NAMES:
+        return None
+    if argv:
+        argv0 = basename_of(argv[0])
+        if argv0.casefold() in SELF_NAMES:
+            return None
+        script = first_script_arg(argv)
+        if script and basename_of(script).casefold() in SELF_NAMES:
+            return None
+    named = provider_from_executable_name(comm_name)
+    if named:
+        return named
+    if not argv:
+        return None
+    argv0 = argv[0]
+    named = provider_from_executable_name(argv0)
+    if named:
+        return named
+    if is_interpreter(basename_of(argv0)):
+        script = first_script_arg(argv)
+        if script:
+            return provider_from_script_path(script)
+        return None
+    return provider_from_script_path(argv0)
+
+
+def iter_jsonl_files(root: Path, errors=None, provider=None) -> Iterator[Path]:
+    def onerror(error):
+        if errors is not None:
+            errors.append(MonitorError(kind="unreadable_directory", provider=provider,
+                                       path=str(error.filename), message="Directory could not be scanned"))
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False, onerror=onerror):
+        dirnames[:] = sorted(name for name in dirnames if not name.startswith("."))
+        for name in sorted(filenames):
+            if name.startswith(".") or not name.endswith(".jsonl"):
+                continue
+            yield Path(dirpath) / name
+
+
+def load_jsonl_records(
+    path: Path,
+    provider: str,
+    errors: list[MonitorError],
+) -> list[tuple[int, Any]]:
+    records: list[tuple[int, Any]] = []
+    try:
+        with path.open(encoding="utf-8") as handle:
+            for line_no, raw in enumerate(handle, start=1):
+                line = raw.lstrip("\ufeff").strip()
+                if not line:
+                    continue
+                try:
+                    records.append((line_no, json.loads(line)))
+                except json.JSONDecodeError as exc:
+                    errors.append(MonitorError(
+                        kind="malformed_record",
+                        provider=provider,
+                        path=str(path),
+                        line=line_no,
+                        message=f"malformed JSON: {exc.msg}",
+                    ))
+    except (OSError, UnicodeError) as exc:
+        errors.append(MonitorError(
+            kind="unreadable_file",
+            provider=provider,
+            path=str(path),
+            message=str(exc),
+        ))
+    return records
+
+
+def looks_usage_like(record: Mapping[str, Any]) -> bool:
+    if USAGE_HINT_KEYS.intersection(record):
+        return True
+    message = record.get("message")
+    if isinstance(message, Mapping) and USAGE_HINT_KEYS.intersection(message):
+        return True
+    payload = record.get("payload")
+    if isinstance(payload, Mapping):
+        if USAGE_HINT_KEYS.intersection(payload):
+            return True
+        info = payload.get("info")
+        if isinstance(info, Mapping) and USAGE_HINT_KEYS.intersection(info):
+            return True
+        if payload.get("type") == "token_count":
+            return True
+    return record.get("type") == "token_count"
+
+
+def claude_identity(record: Mapping[str, Any]) -> str | None:
+    message = record.get("message")
+    if isinstance(message, Mapping):
+        message_id = message.get("id")
+        if isinstance(message_id, str) and message_id.strip():
+            return f"message:{message_id.strip()}"
+    for key in ("requestId", "request_id"):
+        value = record.get(key)
+        if isinstance(value, str) and value.strip():
+            return f"request:{value.strip()}"
+    uuid = record.get("uuid")
+    if isinstance(uuid, str) and uuid.strip():
+        return f"uuid:{uuid.strip()}"
+    return None
+
+
+def extract_claude_usage(record: Mapping[str, Any]) -> TokenUsage | None:
+    message = record.get("message")
+    if isinstance(message, Mapping) and "usage" in message:
+        return usage_from_mapping(message.get("usage"))
+    if "usage" in record and record.get("type") not in CLAUDE_SKIP_TYPES:
+        return usage_from_mapping(record.get("usage"))
+    return None
+
+
+def coverage_from_errors(
+    errors: Sequence[MonitorError],
+    provider: str,
+    *,
+    root_ok: bool,
+) -> Coverage:
+    relevant = [item for item in errors if item.provider == provider]
+    missing_root = any(item.kind == "missing_root" for item in relevant)
+    if not root_ok or missing_root:
+        detail = "; ".join(item.message for item in relevant) or "root was not observed"
+        return Coverage(status="unknown", detail=detail)
+    if relevant:
+        kinds = sorted({item.kind for item in relevant})
+        return Coverage(status="partial", detail=", ".join(kinds))
+    return Coverage(status="complete")
+
+
+def provider_usage_from_tokens(
+    observed: bool,
+    sessions: int,
+    usage: TokenUsage,
+    provider: str,
+) -> ProviderUsage:
+    if not observed:
+        return ProviderUsage(observed=False)
+    payload = ProviderUsage(
+        observed=True,
+        sessions=sessions,
+        input_tokens=usage.input_tokens,
+        output_tokens=usage.output_tokens,
+    )
+    if provider == "claude":
+        payload.cache_creation_input_tokens = usage.cache_creation_input_tokens
+        payload.cache_read_input_tokens = usage.cache_read_input_tokens
+    else:
+        payload.cached_input_tokens = usage.cached_input_tokens
+        payload.reasoning_output_tokens = usage.reasoning_output_tokens
+    return payload
+
+
+def scan_claude(
+    root: Path,
+    start: datetime,
+    end: datetime,
+    errors: list[MonitorError],
+) -> tuple[ProviderUsage, Coverage]:
+    if not root.exists():
+        errors.append(MonitorError(
+            kind="missing_root",
+            provider="claude",
+            path=str(root),
+            message=f"Claude projects root does not exist: {root}",
+        ))
+        return ProviderUsage(observed=False), coverage_from_errors(errors, "claude", root_ok=False)
+    if not root.is_dir():
+        errors.append(MonitorError(
+            kind="missing_root",
+            provider="claude",
+            path=str(root),
+            message=f"Claude projects root is not a directory: {root}",
+        ))
+        return ProviderUsage(observed=False), coverage_from_errors(errors, "claude", root_ok=False)
+
+    snapshots: dict[str, tuple[int, TokenUsage, datetime | None, Path]] = {}
+    anonymous: list[tuple[Path, int, TokenUsage, datetime | None]] = []
+
+    files = list(iter_jsonl_files(root, errors, "claude"))
+    if not files:
+        errors.append(MonitorError(kind="empty_source", provider="claude", path=str(root),
+                                   message="No transcript files found; usage coverage is unknown"))
+        return ProviderUsage(observed=False), Coverage("unknown", "No transcript files")
+    for path in files:
+        for line_no, raw in load_jsonl_records(path, "claude", errors):
+            if not isinstance(raw, Mapping):
+                errors.append(MonitorError(
+                    kind="malformed_record",
+                    provider="claude",
+                    path=str(path),
+                    line=line_no,
+                    message="JSONL row is not an object",
+                ))
+                continue
+            record_type = raw.get("type")
+            try:
+                usage = extract_claude_usage(raw)
+            except InvalidUsage as exc:
+                errors.append(MonitorError(
+                    kind="unknown_schema",
+                    provider="claude",
+                    path=str(path),
+                    line=line_no,
+                    message=str(exc),
+                ))
+                continue
+            if usage is None:
+                if looks_usage_like(raw) and record_type not in CLAUDE_SKIP_TYPES:
+                    errors.append(MonitorError(
+                        kind="unknown_schema",
+                        provider="claude",
+                        path=str(path),
+                        line=line_no,
+                        message="record looks like usage but is not a known Claude schema",
+                    ))
+                continue
+            stamp = event_timestamp(raw)
+            if stamp is None:
+                errors.append(MonitorError(kind="missing_timestamp", provider="claude", path=str(path),
+                                           line=line_no, message="Untimed usage snapshot not counted"))
+                continue
+            if stamp > end:
+                continue
+            identity = claude_identity(raw)
+            if identity is None:
+                anonymous.append((path, line_no, usage, stamp))
+            else:
+                key = identity
+                prior = snapshots.get(key)
+                if prior is None or stamp >= prior[2]:
+                    snapshots[key] = (line_no, usage, stamp, path)
+
+    chosen: list[tuple[Path, int, TokenUsage, datetime | None]] = [
+        (path, line_no, usage, stamp)
+        for _key, (line_no, usage, stamp, path) in snapshots.items()
+    ]
+    chosen.extend(anonymous)
+
+    total = TokenUsage()
+    sessions: set[Path] = set()
+    for path, line_no, usage, stamp in chosen:
+        if stamp is None:
+            errors.append(MonitorError(
+                kind="missing_timestamp",
+                provider="claude",
+                path=str(path),
+                line=line_no,
+                message="usage record has no timestamp; not counted",
+            ))
+            continue
+        if in_window(stamp, start, end):
+            total.add(usage)
+            sessions.add(path)
+
+    coverage = coverage_from_errors(errors, "claude", root_ok=True)
+    return provider_usage_from_tokens(True, len(sessions), total, "claude"), coverage
+
+
+def extract_codex_token_event(
+    record: Mapping[str, Any],
+) -> tuple[str, TokenUsage] | None:
+    """Return ('delta'|'cumulative', usage) for a native Codex token_count event."""
+    payload = record.get("payload") if isinstance(record.get("payload"), Mapping) else None
+    info = None
+    event_type = record.get("type")
+    if isinstance(payload, Mapping):
+        if payload.get("type") == "token_count":
+            event_type = "token_count"
+            info = payload.get("info") if isinstance(payload.get("info"), Mapping) else None
+        elif event_type == "token_count":
+            info = payload
+    if event_type != "token_count" and info is None:
+        if _field_present(record, *TOKEN_FIELD_NAMES) and event_type in {None, "token_count"}:
+            usage = usage_from_mapping(record)
+            if usage is None:
+                return None
+            return ("cumulative", usage)
+        return None
+
+    if isinstance(info, Mapping):
+        last = info.get("last_token_usage")
+        total = info.get("total_token_usage")
+        if total is not None:
+            usage = usage_from_mapping(total)
+            if usage is None:
+                raise InvalidUsage("total_token_usage was empty")
+            return ("cumulative", usage)
+        if last is not None:
+            usage = usage_from_mapping(last)
+            if usage is None:
+                raise InvalidUsage("last_token_usage was empty")
+            return ("delta", usage)
+        usage = usage_from_mapping(info)
+        if usage is not None:
+            return ("cumulative", usage)
+        raise InvalidUsage("token_count info has no known usage fields")
+
+    usage = usage_from_mapping(record)
+    if usage is None:
+        if event_type == "token_count":
+            raise InvalidUsage("token_count event has no known usage fields")
+        return None
+    return ("cumulative", usage)
+
+
+def accumulate_codex_events(events: Sequence[tuple[str, TokenUsage]]) -> TokenUsage:
+    """Turn Codex token_count snapshots into totals without summing cumulatives."""
+    total = TokenUsage()
+    previous_cumulative: TokenUsage | None = None
+    for kind, usage in events:
+        if kind == "delta":
+            total.add(usage)
+            continue
+        if previous_cumulative is None or usage.input_reset(previous_cumulative):
+            total.add(usage)
+        else:
+            total.add(usage.minus_clamped(previous_cumulative))
+        previous_cumulative = usage
+    return total
+
+
+def scan_codex(
+    root: Path,
+    start: datetime,
+    end: datetime,
+    errors: list[MonitorError],
+) -> tuple[ProviderUsage, Coverage]:
+    if not root.exists():
+        errors.append(MonitorError(
+            kind="missing_root",
+            provider="codex",
+            path=str(root),
+            message=f"Codex root does not exist: {root}",
+        ))
+        return ProviderUsage(observed=False), coverage_from_errors(errors, "codex", root_ok=False)
+    if not root.is_dir():
+        errors.append(MonitorError(
+            kind="missing_root",
+            provider="codex",
+            path=str(root),
+            message=f"Codex root is not a directory: {root}",
+        ))
+        return ProviderUsage(observed=False), coverage_from_errors(errors, "codex", root_ok=False)
+
+    sessions_dir = root / "sessions"
+    archived_dir = root / "archived_sessions"
+    missing_parts = [
+        name for name, path in (("sessions", sessions_dir), ("archived_sessions", archived_dir))
+        if not path.is_dir()
+    ]
+    if missing_parts == ["sessions", "archived_sessions"]:
+        errors.append(MonitorError(
+            kind="missing_root",
+            provider="codex",
+            path=str(root),
+            message=(
+                "Codex root has neither sessions/ nor archived_sessions/: "
+                f"{root}"
+            ),
+        ))
+        return ProviderUsage(observed=False), coverage_from_errors(errors, "codex", root_ok=False)
+    for name in missing_parts:
+        errors.append(MonitorError(
+            kind="missing_input",
+            provider="codex",
+            path=str(root / name),
+            message=f"Codex {name}/ directory does not exist under {root}",
+        ))
+
+    total = TokenUsage()
+    groups = {}
+    source_files = []
+    for folder in (sessions_dir, archived_dir):
+        if folder.is_dir():
+            source_files.extend(iter_jsonl_files(folder, errors, "codex"))
+    if not source_files:
+        errors.append(MonitorError(kind="empty_source", provider="codex", path=str(root),
+                                   message="No transcript files found; usage coverage is unknown"))
+        return ProviderUsage(observed=False), Coverage("unknown", "No transcript files")
+    for path in source_files:
+        rows = load_jsonl_records(path, "codex", errors)
+        identities = {str(raw["payload"]["id"]) for _, raw in rows
+                      if isinstance(raw, dict) and raw.get("type") == "session_meta"
+                      and isinstance(raw.get("payload"), dict) and raw["payload"].get("id")}
+        if len(identities) > 1:
+            errors.append(MonitorError(kind="conflicting_identity", provider="codex", path=str(path),
+                                       message="Transcript contains multiple session identifiers"))
+            continue
+        identity = next(iter(identities)) if identities else str(path)
+        group = groups.setdefault(identity, {"events": [], "started": None})
+        for line_no, raw in rows:
+            if not isinstance(raw, Mapping):
+                errors.append(MonitorError(kind="malformed_record", provider="codex", path=str(path),
+                                           line=line_no, message="JSONL row is not an object"))
+                continue
+            if raw.get("type") == "session_meta":
+                group["started"] = event_timestamp(raw)
+            try:
+                extracted = extract_codex_token_event(raw)
+            except InvalidUsage as exc:
+                errors.append(MonitorError(kind="unknown_schema", provider="codex", path=str(path),
+                                           line=line_no, message=str(exc)))
+                continue
+            if extracted is None:
+                if looks_usage_like(raw):
+                    errors.append(MonitorError(kind="unknown_schema", provider="codex", path=str(path),
+                                               line=line_no, message="Unrecognized usage record"))
+                continue
+            stamp = event_timestamp(raw)
+            if stamp is None and isinstance(raw.get("payload"), Mapping):
+                stamp = event_timestamp(raw["payload"])
+            if stamp is None:
+                errors.append(MonitorError(kind="missing_timestamp", provider="codex", path=str(path),
+                                           line=line_no, message="Untimed usage not counted"))
+                continue
+            if stamp <= end:
+                payload = raw.get("payload", {})
+                info = payload.get("info", {}) if isinstance(payload, dict) else {}
+                last = info.get("last_token_usage") if isinstance(info, dict) else None
+                group["events"].append((stamp, line_no, extracted, last, path))
+    counted = 0
+    for group in groups.values():
+        previous = None
+        seen = set()
+        active = False
+        for stamp, line_no, (kind, usage), last_raw, path in sorted(group["events"], key=lambda x: (x[0], x[1])):
+            fingerprint = (stamp, kind, tuple(vars(usage).values()))
+            if fingerprint in seen:
+                continue
+            seen.add(fingerprint)
+            delta = usage
+            if kind == "cumulative":
+                reset = previous is not None and any(getattr(usage, k) < getattr(previous, k) for k in vars(usage))
+                if previous is not None and not reset:
+                    delta = usage.minus_clamped(previous)
+                elif previous is None and last_raw is not None:
+                    try:
+                        delta = usage_from_mapping(last_raw) or usage
+                    except InvalidUsage:
+                        delta = usage
+                elif in_window(stamp, start, end) and (reset or group["started"] is None or group["started"] < start):
+                    errors.append(MonitorError(kind="uncertain_baseline", provider="codex", path=str(path),
+                                               line=line_no, message="Cumulative baseline is missing or resets; this contribution is an upper bound"))
+                previous = usage
+            else:
+                errors.append(MonitorError(kind="delta_without_total", provider="codex", path=str(path),
+                                           line=line_no, message="Only per-turn usage is available; repeated snapshots at different times cannot be resolved"))
+            # Earlier observations establish the baseline even outside the selected window.
+            if in_window(stamp, start, end):
+                total.add(delta)
+                active = True
+        counted += int(active)
+    coverage = coverage_from_errors(errors, "codex", root_ok=True)
+    return provider_usage_from_tokens(True, counted, total, "codex"), coverage
+
+
+def parse_ps_meta_line(line: str) -> dict[str, str] | None:
+    parts = line.strip().split(None, 4)
+    if len(parts) < 5:
+        return None
+    return {
+        "pid": parts[0],
+        "pcpu": parts[1],
+        "pmem": parts[2],
+        "etime": parts[3],
+        "comm": parts[4],
+    }
+
+
+def parse_ps_command_line(line: str) -> tuple[str, str] | None:
+    parts = line.strip().split(None, 1)
+    if not parts:
+        return None
+    pid = parts[0]
+    command = parts[1] if len(parts) > 1 else ""
+    return pid, command
+
+
+def run_ps(columns: Sequence[str]) -> str:
+    return subprocess.check_output(
+        ["ps", "-ax", *columns],
+        text=True,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def collect_live_processes(errors: list[MonitorError]) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    try:
+        meta = run_ps(["-o", "pid=", "-o", "pcpu=", "-o", "pmem=", "-o", "etime=", "-o", "comm="])
+    except (OSError, subprocess.CalledProcessError) as exc:
+        errors.append(MonitorError(
+            kind="ps_failed",
+            provider="process",
+            message=f"failed to list processes: {exc}",
+        ))
+        return rows
+    command_text = ""
+    for option in ("command=", "args="):
+        try:
+            command_text = run_ps(["-o", "pid=", "-o", option])
+            break
+        except (OSError, subprocess.CalledProcessError):
+            continue
+    commands: dict[str, str] = {}
+    for line in command_text.splitlines():
+        parsed = parse_ps_command_line(line)
+        if parsed:
+            commands[parsed[0]] = parsed[1]
+    for line in meta.splitlines():
+        parsed = parse_ps_meta_line(line)
+        if not parsed:
+            continue
+        parsed["command"] = commands.get(parsed["pid"], "")
+        rows.append(parsed)
+    return rows
+
+
+def load_ps_file(path: Path, errors: list[MonitorError]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if not path.exists():
+        errors.append(MonitorError(
+            kind="missing_root",
+            provider="process",
+            path=str(path),
+            message=f"process snapshot does not exist: {path}",
+        ))
+        return rows
+    try:
+        with path.open(encoding="utf-8") as handle:
+            for line_no, raw in enumerate(handle, start=1):
+                line = raw.lstrip("\ufeff").strip()
+                if not line:
+                    continue
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    errors.append(MonitorError(
+                        kind="malformed_record",
+                        provider="process",
+                        path=str(path),
+                        line=line_no,
+                        message=f"malformed process snapshot: {exc.msg}",
+                    ))
+                    continue
+                if not isinstance(item, Mapping):
+                    errors.append(MonitorError(
+                        kind="malformed_record",
+                        provider="process",
+                        path=str(path),
+                        line=line_no,
+                        message="process snapshot row is not an object",
+                    ))
+                    continue
+                rows.append(dict(item))
+    except (OSError, UnicodeError) as exc:
+        errors.append(MonitorError(
+            kind="unreadable_file",
+            provider="process",
+            path=str(path),
+            message=str(exc),
+        ))
+    return rows
+
+
+def processes_from_rows(
+    rows: Iterable[Mapping[str, Any]],
+    errors: list[MonitorError],
+    source: str,
+) -> list[ProcessRow]:
+    matched: list[ProcessRow] = []
+    for index, row in enumerate(rows, start=1):
+        try:
+            pid = int(row.get("pid"))
+        except (TypeError, ValueError):
+            errors.append(MonitorError(
+                kind="malformed_record",
+                provider="process",
+                path=source,
+                line=index,
+                message="process row is missing a pid",
+            ))
+            continue
+        comm = str(row.get("comm") or row.get("ucomm") or "")
+        command = row.get("command")
+        if command is None:
+            command = row.get("args") or ""
+        provider = match_agent_process(comm, command)
+        if not provider:
+            continue
+        cpu = str(row.get("pcpu") if row.get("pcpu") is not None else row.get("cpu") or "?")
+        mem = str(row.get("pmem") if row.get("pmem") is not None else row.get("mem") or "?")
+        etime = str(row.get("etime") or "?")
+        if isinstance(command, (list, tuple)):
+            rendered = " ".join(str(part) for part in command)
+        else:
+            rendered = str(command)
+        matched.append(ProcessRow(
+            pid=pid,
+            provider=provider,
+            cpu=cpu,
+            mem=mem,
+            etime=etime,
+            command=rendered,
+            comm=comm,
+        ))
+    matched.sort(key=lambda item: (item.provider, item.pid))
+    return matched
+
+
+def collect_processes(ps_file: Path | None, errors: list[MonitorError]) -> tuple[list[ProcessRow], Coverage]:
+    before = len(errors)
+    if ps_file is None:
+        rows = collect_live_processes(errors)
+        source = "ps"
+    else:
+        rows = load_ps_file(ps_file, errors)
+        source = str(ps_file)
+    after_collect = [item for item in errors[before:] if item.provider == "process"]
+    if any(item.kind in {"ps_failed", "missing_root", "unreadable_file"} for item in after_collect):
+        processes = processes_from_rows(rows, errors, source)
+        return processes, Coverage(
+            status="unknown",
+            detail="; ".join(item.message for item in after_collect),
+        )
+    processes = processes_from_rows(rows, errors, source)
+    coverage = coverage_from_errors(errors, "process", root_ok=True)
+    return processes, coverage
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=".agent-monitor.",
+        suffix=".tmp",
+        dir=str(path.parent),
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_name, path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+
+
+def escape_table_cell(text: str) -> str:
+    return text.replace("|", "\\|").replace("\n", " ").strip()
+
+
+def truncate(text: str, width: int = 80) -> str:
+    if len(text) <= width:
+        return text
+    return text[: width - 1] + "…"
+
+
+def format_updated(moment: datetime) -> str:
+    local = moment
+    return f"{local.year:04d}.{local.month:02d}.{local.day:02d} {local.hour:02d}:{local.minute:02d}"
+
+
+def usage_frontmatter_value(payload: ProviderUsage, field_name: str) -> str:
+    if not payload.observed:
+        return "unknown"
+    value = getattr(payload, field_name)
+    return "unknown" if value is None else str(value)
+
+
+def render_markdown(report: Report) -> str:
+    claude = report.usage.get("claude") or ProviderUsage(observed=False)
+    codex = report.usage.get("codex") or ProviderUsage(observed=False)
+    claude_cov = report.coverage.get("claude") or Coverage("unknown")
+    codex_cov = report.coverage.get("codex") or Coverage("unknown")
+    proc_cov = report.coverage.get("processes") or Coverage("unknown")
+
+    session_bits: list[int] = []
+    if claude.observed and claude.sessions is not None:
+        session_bits.append(claude.sessions)
+    if codex.observed and codex.sessions is not None:
+        session_bits.append(codex.sessions)
+    if claude.observed and codex.observed:
+        session_count = str(sum(session_bits))
+    elif session_bits:
+        session_count = f"{sum(session_bits)} (partial)"
+    else:
+        session_count = "unknown"
+
+    token_total = "unknown"
+    if claude.observed or codex.observed:
+        total = 0
+        if claude.observed:
+            total += (claude.input_tokens or 0) + (claude.output_tokens or 0)
+        if codex.observed:
+            total += (codex.input_tokens or 0) + (codex.output_tokens or 0)
+        token_total = str(total)
+
+    agent_count = (
+        str(len(report.processes))
+        if proc_cov.status != "unknown"
+        else "unknown"
+    )
+
+    lines = [
+        "type:: agents",
+        f"version:: {report.version}",
+        f"updated:: {format_updated(report.observed_at)}",
+        f"observed_at:: {report.observed_at.isoformat()}",
+        f"hours:: {report.hours:g}",
+        f"agent_count:: {agent_count}",
+        f"session_count:: {session_count}",
+        f"tokens_total:: {token_total}",
+        f"claude_coverage:: {claude_cov.status}",
+        f"codex_coverage:: {codex_cov.status}",
+        f"claude_sessions:: {usage_frontmatter_value(claude, 'sessions')}",
+        f"claude_tokens_in:: {usage_frontmatter_value(claude, 'input_tokens')}",
+        f"claude_tokens_out:: {usage_frontmatter_value(claude, 'output_tokens')}",
+        f"claude_cache_creation:: {usage_frontmatter_value(claude, 'cache_creation_input_tokens')}",
+        f"claude_cache_read:: {usage_frontmatter_value(claude, 'cache_read_input_tokens')}",
+        f"codex_sessions:: {usage_frontmatter_value(codex, 'sessions')}",
+        f"codex_tokens_in:: {usage_frontmatter_value(codex, 'input_tokens')}",
+        f"codex_tokens_out:: {usage_frontmatter_value(codex, 'output_tokens')}",
+        f"codex_cached:: {usage_frontmatter_value(codex, 'cached_input_tokens')}",
+        f"codex_reasoning:: {usage_frontmatter_value(codex, 'reasoning_output_tokens')}",
+        f"error_count:: {len(report.errors)}",
+        "",
+        "---",
+        "",
+        "# Agent Monitor",
+        "",
+        f"Observation time: `{report.observed_at.isoformat()}` · window: last {report.hours:g} hours.",
+        "",
+        "Usage is selected by event timestamps, not file modification time. Cache fields are listed separately and are not folded into input. This report does not include cost estimates.",
+        "",
+        "Roots:",
+        f"- Claude projects: `{report.roots.get('claude', '')}`",
+        f"- Codex: `{report.roots.get('codex', '')}`",
+        "",
+        f"## Running processes: {agent_count}",
+        "",
+        "Rows are processes that are running now. A session file is not evidence that a task completed, and a missing process is not treated as completion.",
+        "",
+        "| PID | Provider | CPU | MEM | Uptime | Command |",
+        "|-----|----------|-----|-----|--------|---------|",
+    ]
+    if report.processes:
+        for proc in report.processes:
+            cpu = proc.cpu if proc.cpu.endswith("%") else f"{proc.cpu}%"
+            mem = proc.mem if proc.mem.endswith("%") else f"{proc.mem}%"
+            command = escape_table_cell(truncate(proc.command))
+            lines.append(
+                f"| {proc.pid} | {proc.provider} | {cpu} | {mem} | "
+                f"{escape_table_cell(proc.etime)} | {command} |"
+            )
+    else:
+        lines.append("| — | — | — | — | — | _No matching Claude or Codex processes are running._ |")
+
+    lines.extend([
+        "",
+        f"## Usage last {report.hours:g} hours",
+        "",
+        f"### Claude · coverage `{claude_cov.status}`",
+        "",
+    ])
+    if claude_cov.detail:
+        lines.append(f"{claude_cov.detail}")
+        lines.append("")
+    if not claude.observed:
+        lines.append("Claude usage was not observed. Totals are unknown, not zero.")
+        lines.append("")
+    else:
+        lines.append(
+            f"Sessions: {claude.sessions} · "
+            f"{claude.input_tokens} in / {claude.output_tokens} out · "
+            f"cache create {claude.cache_creation_input_tokens} · "
+            f"cache read {claude.cache_read_input_tokens}"
+        )
+        lines.append("")
+
+    lines.extend([
+        f"### Codex · coverage `{codex_cov.status}`",
+        "",
+    ])
+    if codex_cov.detail:
+        lines.append(f"{codex_cov.detail}")
+        lines.append("")
+    if not codex.observed:
+        lines.append("Codex usage was not observed. Totals are unknown, not zero.")
+        lines.append("")
+    else:
+        lines.append(
+            f"Sessions: {codex.sessions} · "
+            f"{codex.input_tokens} in / {codex.output_tokens} out · "
+            f"cached {codex.cached_input_tokens} · "
+            f"reasoning {codex.reasoning_output_tokens}"
+        )
+        lines.append("")
+
+    lines.extend(["## Warnings", ""])
+    if report.errors:
+        for item in report.errors:
+            location = item.path or ""
+            if item.line is not None and location:
+                location = f"{location}:{item.line}"
+            prefix = f"{item.kind}"
+            if item.provider:
+                prefix = f"{item.provider} {prefix}"
+            if location:
+                lines.append(f"- {prefix}: {item.message} (`{location}`)")
+            else:
+                lines.append(f"- {prefix}: {item.message}")
+    else:
+        lines.append("- none")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def summary_line(report: Report) -> str:
+    proc_cov = report.coverage.get("processes") or Coverage("unknown")
+    running = "unknown" if proc_cov.status == "unknown" else str(len(report.processes))
+    claude = report.usage.get("claude")
+    codex = report.usage.get("codex")
+    sessions = 0
+    tokens = 0
+    observed_usage = False
+    if claude and claude.observed:
+        observed_usage = True
+        sessions += claude.sessions or 0
+        tokens += (claude.input_tokens or 0) + (claude.output_tokens or 0)
+    if codex and codex.observed:
+        observed_usage = True
+        sessions += codex.sessions or 0
+        tokens += (codex.input_tokens or 0) + (codex.output_tokens or 0)
+    warning_n = len(report.errors)
+    parts = [f"{running} running"]
+    if observed_usage:
+        parts.append(f"{sessions} sessions")
+        parts.append(f"{tokens} tokens")
+    else:
+        parts.append("usage unknown")
+    if warning_n:
+        parts.append(f"{warning_n} warning" + ("" if warning_n == 1 else "s"))
+    return "Agent monitor: " + ", ".join(parts)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Write a Markdown dashboard of local Claude and Codex processes and token usage.",
+    )
+    parser.add_argument(
+        "output",
+        nargs="?",
+        default=DEFAULT_OUTPUT,
+        help=f"Markdown output path (default: {DEFAULT_OUTPUT})",
+    )
+    parser.add_argument("--now", help="Observation instant (ISO 8601). Default: current UTC time.")
+    parser.add_argument(
+        "--hours",
+        type=float,
+        default=DEFAULT_HOURS,
+        help="Lookback window in hours (default: 24). Usage is selected by event timestamps.",
+    )
+    parser.add_argument(
+        "--claude-root",
+        type=Path,
+        help="Claude projects directory (default: ~/.claude/projects)",
+    )
+    parser.add_argument(
+        "--codex-root",
+        type=Path,
+        help="Codex root containing sessions/ and archived_sessions/ (default: ~/.codex)",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print machine-readable JSON to stdout instead of the summary line.",
+    )
+    parser.add_argument(
+        "--json-output",
+        type=Path,
+        help="Write machine-readable JSON to this path (atomic replace).",
+    )
+    parser.add_argument(
+        "--ps-file",
+        type=Path,
+        help="JSONL process snapshot for tests instead of calling ps(1).",
+    )
+    parser.add_argument("--version", action="version", version=f"agent-monitor {VERSION}")
+    return parser
+
+
+def observe(args: argparse.Namespace) -> Report:
+    if args.now:
+        observed_at = parse_timestamp(args.now)
+        if observed_at is None:
+            raise SystemExit("error: --now must be an ISO 8601 datetime")
+    else:
+        observed_at = datetime.now(UTC)
+    if not math.isfinite(args.hours) or args.hours < 0:
+        raise SystemExit("error: --hours must be finite and >= 0")
+    try:
+        start = observed_at - timedelta(hours=args.hours)
+    except (OverflowError, ValueError):
+        raise SystemExit("error: --hours exceeds the supported datetime range")
+    claude_root = (args.claude_root or default_claude_root()).expanduser()
+    codex_root = (args.codex_root or default_codex_root()).expanduser()
+    errors: list[MonitorError] = []
+    processes, process_coverage = collect_processes(args.ps_file, errors)
+    claude_usage, claude_coverage = scan_claude(claude_root, start, observed_at, errors)
+    codex_usage, codex_coverage = scan_codex(codex_root, start, observed_at, errors)
+    return Report(
+        version=VERSION,
+        observed_at=observed_at,
+        hours=args.hours,
+        roots={"claude": str(claude_root), "codex": str(codex_root)},
+        coverage={
+            "claude": claude_coverage,
+            "codex": codex_coverage,
+            "processes": process_coverage,
+        },
+        errors=errors,
+        processes=processes,
+        usage={"claude": claude_usage, "codex": codex_usage},
+    )
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    require_python()
+    parser = build_parser()
+    args = parser.parse_args(list(argv) if argv is not None else None)
+    try:
+        report = observe(args)
+    except SystemExit as exc:
+        message = exc.args[0] if exc.args else None
+        if isinstance(message, str) and message.startswith("error:"):
+            sys.stderr.write(message + "\n")
+            return 2
+        raise
+    markdown = render_markdown(report)
+    payload = report.as_dict()
+    json_text = json.dumps(payload, indent=2) + "\n"
+    output = Path(args.output).expanduser()
+    try:
+        atomic_write_text(output, markdown)
+        if args.json_output is not None:
+            atomic_write_text(Path(args.json_output).expanduser(), json_text)
+    except OSError as exc:
+        sys.stderr.write(f"error: failed to write output: {exc}\n")
+        return 1
+    if args.json:
+        sys.stdout.write(json_text)
+    else:
+        sys.stdout.write(summary_line(report) + "\n")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

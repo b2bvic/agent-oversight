@@ -1,0 +1,10 @@
+{"pid": 10, "pcpu": 0.0, "pmem": 0.1, "etime": "00:01", "comm": "grep", "command": "grep claude"}
+{"pid": 11, "pcpu": 0.0, "pmem": 0.1, "etime": "00:01", "comm": "bash", "command": "bash -c claude --dangerously-skip-permissions"}
+{"pid": 12, "pcpu": 0.0, "pmem": 0.1, "etime": "00:01", "comm": "cat", "command": "cat /tmp/claude.jsonl"}
+{"pid": 13, "pcpu": 0.0, "pmem": 0.1, "etime": "00:01", "comm": "claude-agent", "command": "/usr/local/bin/claude-agent"}
+{"pid": 14, "pcpu": 0.0, "pmem": 0.1, "etime": "00:01", "comm": "python3", "command": "python3 /tmp/claude_helper.py"}
+{"pid": 18, "pcpu": 0.0, "pmem": 0.1, "etime": "00:01", "comm": "node", "command": "node /tmp/my-claude-tool.js"}
+{"pid": 19, "pcpu": 0.0, "pmem": 0.1, "etime": "00:01", "comm": "echo", "command": "echo codex"}
+{"pid": 15, "pcpu": 1.2, "pmem": 2.3, "etime": "01:23", "comm": "claude", "command": "/usr/local/bin/claude --project demo"}
+{"pid": 16, "pcpu": 0.4, "pmem": 1.1, "etime": "00:44", "comm": "node", "command": "node /usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js"}
+{"pid": 17, "pcpu": 0.8, "pmem": 1.5, "etime": "00:12", "comm": "codex", "command": "/usr/local/bin/codex exec"}

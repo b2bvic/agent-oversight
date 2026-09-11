@@ -1,0 +1,2 @@
+{"type":"assistant","message":{"id":"msg_no_ts","usage":{"input_tokens":3,"output_tokens":1}}}
+{"type":"assistant","timestamp":"2026-01-15T12:00:00Z","message":{"id":"msg_with_ts","usage":{"input_tokens":8,"output_tokens":2}}}

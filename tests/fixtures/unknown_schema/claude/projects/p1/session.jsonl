@@ -1,0 +1,2 @@
+{"type":"token_blob","timestamp":"2026-01-15T12:00:00Z","token_usage":{"in":5,"out":2}}
+{"type":"assistant","timestamp":"2026-01-15T12:01:00Z","message":{"id":"msg_known","usage":{"input_tokens":4,"output_tokens":1}}}

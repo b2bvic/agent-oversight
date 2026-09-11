@@ -1,51 +1,76 @@
 #!/usr/bin/env python3
-"""Build an arm64 macOS launcher with the current Bash script embedded."""
+"""Build an arm64 macOS onefile binary from the Python entrypoint."""
 
 import argparse
+import os
 from pathlib import Path
 import platform
 import subprocess
+import sys
 import tempfile
+import venv
+
+# Pin PyInstaller to record the packaging tool version.
+PYINSTALLER_VERSION = "6.22.2"
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if platform.system() != "Darwin" or platform.machine() != "arm64":
         parser.error("Build on arm64 macOS with the Xcode command line tools.")
+    if sys.version_info < (3, 11):
+        parser.error("Python 3.11+ is required to build agent-monitor 0.2.0.")
     root = Path(__file__).resolve().parent.parent
-    script = (root / "agent-monitor").read_bytes()
-    if b"\0" in script:
-        parser.error("The Bash source contains a NUL byte.")
+    script = root / "agent-monitor"
+    if not script.is_file():
+        parser.error(f"Missing entrypoint: {script}")
     output = args.output.resolve()
+    if output.exists() and output.is_dir():
+        parser.error("Output path is a directory.")
     output.parent.mkdir(parents=True, exist_ok=True)
-    payload = ",".join(str(byte) for byte in script + b"\0")
-    source = """#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-static char script[] = {PAYLOAD};
-int main(int argc, char **argv) {
-    char **args = calloc((size_t)argc + 4, sizeof(char *));
-    if (!args) { perror("calloc"); return 1; }
-    args[0] = "/bin/bash";
-    args[1] = "-c";
-    args[2] = script;
-    args[3] = "agent-monitor";
-    for (int i = 1; i < argc; ++i) args[i + 3] = argv[i];
-    execv(args[0], args);
-    perror("execv /bin/bash");
-    free(args);
-    return 126;
-}
-""".replace("PAYLOAD", payload)
-    with tempfile.TemporaryDirectory(dir=output.parent) as temp:
-        c_file = Path(temp) / "launcher.c"
-        c_file.write_text(source)
-        subprocess.run([
-            "clang", "-arch", "arm64", "-mmacosx-version-min=11.0",
-            "-Os", "-Wall", "-Wextra", "-Werror", str(c_file), "-o", str(output),
-        ], check=True)
+    with tempfile.TemporaryDirectory(prefix="agent-monitor-build-") as tmp:
+        tmp_path = Path(tmp)
+        venv_dir = tmp_path / "venv"
+        venv.create(venv_dir, with_pip=True)
+        python = venv_dir / "bin" / "python"
+        subprocess.run(
+            [str(python), "-m", "pip", "install", f"pyinstaller=={PYINSTALLER_VERSION}"],
+            check=True,
+        )
+        # PyInstaller expects a .py suffix; copy without touching the live entrypoint name.
+        source = tmp_path / "agent_monitor.py"
+        source.write_bytes(script.read_bytes())
+        dist = tmp_path / "dist"
+        work = tmp_path / "work"
+        specdir = tmp_path / "spec"
+        subprocess.run(
+            [
+                str(python),
+                "-m",
+                "PyInstaller",
+                "--onefile",
+                "--clean",
+                "--noconfirm",
+                "--name",
+                output.name,
+                "--distpath",
+                str(dist),
+                "--workpath",
+                str(work),
+                "--specpath",
+                str(specdir),
+                str(source),
+            ],
+            check=True,
+        )
+        built = dist / output.name
+        os.replace(built, output)
+        subprocess.run(
+            ["codesign", "--force", "--sign", "-", str(output)],
+            check=True,
+        )
     print(output)
 
 
