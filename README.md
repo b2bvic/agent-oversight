@@ -5,7 +5,7 @@ Use this stack to inspect agent work and keep its records on your machine.
 
 | Tool | What you use it for |
 |---|---|
-| [session-ledger](https://github.com/b2bvic/session-ledger) | Archive and search local Claude Code transcripts in SQLite. |
+| [session-ledger](https://github.com/b2bvic/session-ledger) | Archive and search local Claude Code and Codex transcripts in SQLite. |
 | [agent-monitor](https://github.com/b2bvic/agent-monitor) | Inspect matching processes and recorded token usage in Markdown. |
 | [observer-daemon](https://github.com/b2bvic/observer-daemon) | Score responses against writing rules and record violations. |
 | [owned-record](https://github.com/b2bvic/owned-record) | Keep domain context, activity logs, and reusable procedures in Markdown. |
@@ -27,3 +27,25 @@ The tools run independently. They do not ship a shared approval gate or automati
 You must enforce approval where an action executes. A passing response score does not authorize a send, payment, or deletion.
 
 Start with each tool's README for installation, sample output, and configuration.
+
+## Checks and evidence
+
+Use the [skills](https://github.com/b2bvic/skills) to search history, inspect processes, select context, and check declared local outcomes.
+`gate-check` evaluates writing rules. `completion-check` verifies specific local artifact and source-revision claims.
+Neither check grants permission to act.
+
+Keep these states separate: a session runs, a model reports completion, a check verifies an artifact, and a destination accepts an action.
+A process count or response score cannot establish all four.
+
+## Verify an upgrade
+
+Run the component regression suites with synthetic inputs before changing your installed tools.
+Follow [Evaluate the stack](EVALUATION.md) to compare model versions and record missing evidence.
+Source changes do not replace existing release binaries. Check each repository's version and release instructions before installation.
+
+## Integration boundary
+
+The stack has no shared scheduler, automatic context injection, or universal approval service.
+The monitor reads local records; it is not an account billing report.
+The ledger preserves recorded statements; it does not verify their truth.
+Use native [Claude Code telemetry](https://code.claude.com/docs/en/monitoring-usage) when you need its supported metrics and traces.
