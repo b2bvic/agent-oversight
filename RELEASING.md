@@ -2,7 +2,9 @@
 
 You need arm64 macOS, Python 3.11+, and the Xcode command line tools.
 
-**v0.1.0** packaged a clang launcher that embedded the Bash `agent-monitor` script and exec'd `/bin/bash`. **0.2.0 (unreleased)** packages the Python 3.11+ entrypoint with a pinned PyInstaller onefile build. This pass updates the build script only; it does not install into live paths.
+Version 0.1.0 embeds the Bash script in a native launcher.
+Version 0.2.0 bundles the Python entrypoint with PyInstaller.
+Use the matching release tag when you reproduce a published build.
 
 Run this command from the repository root:
 
