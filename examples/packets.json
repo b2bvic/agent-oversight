@@ -1,0 +1,4 @@
+[
+  {"id": "docs", "paths": ["docs"]},
+  {"id": "parser", "paths": ["src/parser.py", "tests/test_parser.py"]}
+]
