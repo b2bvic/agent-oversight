@@ -2,7 +2,7 @@
 
 This table maps functional README claims to source lines.
 
-The scaffold is a local candidate. Publication, hosted CI, deployment, and customer use are not claimed.
+Team deployment, customer use, and production results are not claimed.
 
 | Claim | Source evidence |
 |---|---|

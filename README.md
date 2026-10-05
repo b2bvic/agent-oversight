@@ -3,16 +3,17 @@
 effect-gate-template checks structured authorization at a local capability adapter for teams that use hosted agents.
 It blocks requests without matching authorization before the adapter runs.
 
-This is a local publication candidate extracted from a single-operator workflow. It shows patterns a team can adopt.
+It shows patterns a team can adopt, extracted from a single-operator multi-agent workflow.
+
+[Project page](https://scalewithsearch.com/code/effect-gate-template)
 
 ## Install
 
 Use Python 3.11 or later. The runtime uses the Python standard library.
-From the directory that contains this candidate, run these commands.
 
 ```sh
+git clone https://github.com/b2bvic/effect-gate-template.git
 cd effect-gate-template
-python3 --version
 ```
 
 ## Quick start
@@ -58,7 +59,7 @@ ruff format --check .
 git diff --check
 ```
 
-The CI workflow contains these checks. Hosted CI has not run for this local candidate.
+The CI workflow runs these checks on each push and pull request.
 
 ## Related repositories
 
