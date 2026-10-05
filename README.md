@@ -3,16 +3,17 @@
 swarm-contract checks packet ownership paths and file-bound review receipts for teams that use hosted coding agents.
 It detects overlapping packet paths and rejects reviews when listed file content changes.
 
-This is a local publication candidate extracted from a single-operator workflow. It shows patterns a team can adopt.
+It shows patterns a team can adopt, extracted from a single-operator multi-agent workflow.
+
+[Project page](https://scalewithsearch.com/code/swarm-contract)
 
 ## Install
 
 Use Python 3.11 or later. The runtime uses the Python standard library.
-From the directory that contains this candidate, run these commands.
 
 ```sh
+git clone https://github.com/b2bvic/swarm-contract.git
 cd swarm-contract
-python3 --version
 ```
 
 ## Quick start
@@ -64,7 +65,7 @@ ruff format --check .
 git diff --check
 ```
 
-The CI workflow contains these checks. Hosted CI has not run for this local candidate.
+The CI workflow runs these checks on each push and pull request.
 
 ## Related repositories
 
