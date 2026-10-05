@@ -77,6 +77,10 @@ See [Build a macOS release](RELEASING.md) before packaging a source change.
 - [observer-daemon](https://github.com/b2bvic/observer-daemon): configured response checks.
 - [skills](https://github.com/b2bvic/skills): local oversight helpers.
 
+## How this was built
+
+This README was written with model assistance in 2026. The code and tests in this repository are the evidence; read them to judge the tool.
+
 ## License
 
 [MIT](LICENSE).
