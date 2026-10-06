@@ -11,7 +11,7 @@ Preserve the source format when you replace transcript content with synthetic te
 
 ## Run offline regressions
 
-Run each repository's documented tests before comparing models.
+Run the hub fixture tests and each component's documented tests before comparing models.
 Use temporary databases and fixture roots. Do not harvest your personal history for a public test.
 
 | Failure | Expected check |
@@ -28,8 +28,10 @@ Use temporary databases and fixture roots. Do not harvest your personal history 
 | A request matches two domains | Routing reports ambiguity and loads no context body. |
 | Fluent text contains an incorrect claim | A writing score does not become a factuality verdict. |
 
-The ledger, monitor, skills, and Owned Record repositories contain the corresponding implementation tests.
-Observer's tests cover writing rules and supported parser examples. Its README states current daemon ingestion limits.
+The [monitor](components/agent-monitor/README.md) and [skills](components/skills/README.md) components contain the local implementation tests.
+[Session-ledger](https://github.com/b2bvic/owned-record/tree/main/components/session-ledger) in Owned Record tests transcript capture.
+[Observer-daemon](components/observer-daemon/README.md) tests writing rules and supported parser examples.
+Its README states current daemon ingestion limits.
 
 ## Compare models
 

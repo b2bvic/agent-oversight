@@ -3,15 +3,15 @@
 Safe-api wraps REST API writes with configurable dry-run, scope, and breaker controls for operators who connect hosted-model workflows to APIs.
 It helps callers inspect intended writes and retain an agent API audit trail before enabling execution.
 
-[Project page](https://scalewithsearch.com/code/safe-api)
+[Project page](https://scalewithsearch.com/code/agent-oversight#safe-api)
 
 ## Install
 
 Use Python 3.11 or newer and Git. The runtime uses only the Python standard library.
 
 ```bash
-git clone https://github.com/b2bvic/safe-api.git
-cd safe-api
+git clone https://github.com/b2bvic/agent-oversight.git
+cd agent-oversight/components/safe-api
 ```
 
 Import `SafeAPIClient` from `safe_api.py`, or copy the module into your reviewed application.
@@ -81,12 +81,12 @@ python3 -m unittest discover -s tests -v
 - Logs can contain payloads and server errors. Scope rejections and pre-request exceptions are not all logged.
 - There is no log redaction, rotation, locking, or durable approval record. Protect logs in your integration.
 
-## Related repositories
+## Related components
 
-- [agent-oversight](https://github.com/b2bvic/agent-oversight): orchestration cluster and action boundaries.
-- [skills](https://github.com/b2bvic/skills): local artifact checks that do not authorize actions.
-- [session-ledger](https://github.com/b2bvic/session-ledger): transcript record archive.
-- [observer-protocol](https://github.com/b2bvic/observer-protocol): local draft review status.
+- [agent-oversight](../../README.md): orchestration cluster and action boundaries.
+- [skills](../skills/README.md): local artifact checks that do not authorize actions.
+- [session-ledger](https://github.com/b2bvic/owned-record/tree/main/components/session-ledger): transcript record archive.
+- [observer-protocol](../observer-protocol/README.md): local draft review status.
 
 ## How this was built
 

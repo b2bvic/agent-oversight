@@ -1,6 +1,6 @@
 {
   "source_path": ".",
-  "generated_timestamp": "2026-10-05T21:28:17.296555+00:00",
+  "generated_timestamp": "2026-10-06T13:53:08.407428+00:00",
   "file_count": 31,
   "files": [
     {
@@ -33,7 +33,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "9531acd2a4913560e8155f2de6867d10b5347c8b80d539ff5787553d35a90076"
+      "sha256": "f88d443d1fd929e462235bce78823ca76bc35989da4b80747bb7f57c7ebf1203"
     },
     {
       "path": "RELEASING.md",
@@ -128,5 +128,5 @@
       "sha256": "8dc2fbcded390e8bc36fa1aff00bf1247ecd90c3401707b5ed28493a004b0bee"
     }
   ],
-  "scope_note": "Current candidate branch files after scrub. Manifest and allowlist are listed but excluded from recursive hashing."
+  "scope_note": "Rollup component files after documentation updates. Manifest and allowlist are listed but excluded from recursive hashing."
 }

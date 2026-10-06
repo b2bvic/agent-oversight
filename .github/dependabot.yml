@@ -5,3 +5,13 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+  - package-ecosystem: cargo
+    directory: /components/observer-daemon
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /components/observer-protocol
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

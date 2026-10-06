@@ -3,15 +3,15 @@
 Observer-protocol captures Markdown intake, correction history, and local drafts for operators who review hosted-model work.
 It helps you inspect recent record patterns and retain human review status before connecting an action service.
 
-[Project page](https://scalewithsearch.com/code/observer-protocol)
+[Project page](https://scalewithsearch.com/code/agent-oversight#observer-protocol)
 
 ## Install
 
 Use Node.js 22 or 24, npm, and Git.
 
 ```bash
-git clone https://github.com/b2bvic/observer-protocol.git
-cd observer-protocol
+git clone https://github.com/b2bvic/agent-oversight.git
+cd agent-oversight/components/observer-protocol
 npm ci
 npm run build
 ```
@@ -68,12 +68,12 @@ npm audit --audit-level=moderate
 - Default draft commands inspect `.observer/drafts/`. A custom `draft_path` requires your own review adapter.
 - `plugin/scripts/` contains a companion shell analyzer. It is not an installable Obsidian plugin.
 
-## Related repositories
+## Related components
 
-- [agent-oversight](https://github.com/b2bvic/agent-oversight): orchestration cluster and evaluation guide.
-- [observer-daemon](https://github.com/b2bvic/observer-daemon): deterministic response writing checks.
-- [skills](https://github.com/b2bvic/skills): explicit local artifact verification.
-- [safe-api](https://github.com/b2bvic/safe-api): configured controls around REST write calls.
+- [agent-oversight](../../README.md): orchestration cluster and evaluation guide.
+- [observer-daemon](../observer-daemon/README.md): deterministic response writing checks.
+- [skills](../skills/README.md): explicit local artifact verification.
+- [safe-api](../safe-api/README.md): configured controls around REST write calls.
 
 ## License
 

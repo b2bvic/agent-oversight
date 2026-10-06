@@ -5,6 +5,8 @@ description: Run agent-monitor when you need local Claude Code and Codex process
 
 # Inspect agent status
 
+Use the source in `agent-oversight/components/agent-monitor` or its reviewed installation on `PATH`.
+See the `agent-oversight/components/agent-monitor/README.md` in your checkout.
 Locate `agent-monitor` on `PATH`. If it is missing, report the missing tool.
 Use the requested output path. Otherwise, choose a new file in the system temporary directory.
 If the path already exists, use a new path unless replacement is part of the request.

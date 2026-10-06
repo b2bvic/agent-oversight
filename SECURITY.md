@@ -12,6 +12,8 @@ Reports against the current default branch receive review. There is no guarantee
 
 ## Data and permission boundaries
 
-This repository contains guidance and synthetic fixtures. It does not enforce approval or run the linked tools.
+This repository contains runtime components, guidance, and synthetic fixtures.
+Review each component's security policy before you connect private records or external services.
+The repository supplies no universal approval service. Enforce authorization where an action executes.
 
 Keep tokens in environment variables or your secret store. Use temporary directories and synthetic data for tests.

@@ -1,9 +1,9 @@
 # Claude Code agent oversight skills: skills
 
-This repository installs Claude Code skills for operators who inspect agent sessions and local artifacts from hosted-model workflows.
+This component installs Claude Code skills for operators who inspect agent sessions and local artifacts from hosted-model workflows.
 The helpers expose session searches, explicit context selection, and evidence checks when completion claims need verification.
 
-[Project page](https://scalewithsearch.com/code/skills)
+[Project page](https://scalewithsearch.com/code/agent-oversight#skills)
 
 ## Install
 
@@ -12,13 +12,15 @@ The installer copies eight skill folders and refuses existing destination names 
 It does not change hooks, permissions, or schedules.
 
 ```bash
-git clone https://github.com/b2bvic/skills.git b2bvic-skills
-cd b2bvic-skills
+git clone https://github.com/b2bvic/agent-oversight.git
+cd agent-oversight/components/skills
 python3 install.py
 ```
 
 For a project installation, pass `--dest /path/to/project/.claude/skills`.
-Install `ledger`, `agent-monitor`, and `observer-daemon` separately when the corresponding skills need them.
+Use [agent-monitor](../agent-monitor/README.md) from `components/agent-monitor` when `/agent-status` needs it.
+Build [observer-daemon](../observer-daemon/README.md) from `components/observer-daemon` when `/gate-check` needs it.
+Install `ledger` from [b2bvic/owned-record](https://github.com/b2bvic/owned-record/tree/main/components/session-ledger), folder `components/session-ledger`, for `/ledger-search`.
 
 ## Quick start
 
@@ -73,13 +75,13 @@ python3 -m unittest discover -s tests -v
 - Routing reports ambiguous or unmatched requests and leaves context unloaded. You must choose a domain before reading context.
 - The installer targets Claude Code skill folders. It does not install a Codex CLI adapter.
 
-## Related repositories
+## Related components
 
-- [agent-oversight](https://github.com/b2bvic/agent-oversight): orchestration cluster and evaluation guide.
-- [session-ledger](https://github.com/b2bvic/session-ledger): transcript archive and search.
-- [agent-monitor](https://github.com/b2bvic/agent-monitor): process and usage observations.
-- [observer-daemon](https://github.com/b2bvic/observer-daemon): response writing checks.
-- [route-domain](https://github.com/b2bvic/route-domain): example hook that loads context bodies.
+- [agent-oversight](../../README.md): orchestration cluster and evaluation guide.
+- [session-ledger](https://github.com/b2bvic/owned-record/tree/main/components/session-ledger): transcript archive and search.
+- [agent-monitor](../agent-monitor/README.md): process and usage observations.
+- [observer-daemon](../observer-daemon/README.md): response writing checks.
+- [route-domain](https://github.com/b2bvic/owned-record/tree/main/components/route-domain): example hook that loads context bodies.
 
 ## License
 

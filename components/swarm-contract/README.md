@@ -5,15 +5,15 @@ It detects overlapping packet paths and rejects reviews when listed file content
 
 It shows patterns a team can adopt, extracted from a single-operator multi-agent workflow.
 
-[Project page](https://scalewithsearch.com/code/swarm-contract)
+[Project page](https://scalewithsearch.com/code/agent-oversight#swarm-contract)
 
 ## Install
 
 Use Python 3.11 or later. The runtime uses the Python standard library.
 
 ```sh
-git clone https://github.com/b2bvic/swarm-contract.git
-cd swarm-contract
+git clone https://github.com/b2bvic/agent-oversight.git
+cd agent-oversight/components/swarm-contract
 ```
 
 ## Quick start
@@ -67,8 +67,8 @@ git diff --check
 
 The CI workflow runs these checks on each push and pull request.
 
-## Related repositories
+## Related components
 
-- [agent-oversight](https://github.com/b2bvic/agent-oversight)
-- [session-ledger](https://github.com/b2bvic/session-ledger)
-- [safe-api](https://github.com/b2bvic/safe-api)
+- [agent-oversight](../../README.md)
+- [session-ledger](https://github.com/b2bvic/owned-record/tree/main/components/session-ledger)
+- [safe-api](../safe-api/README.md)

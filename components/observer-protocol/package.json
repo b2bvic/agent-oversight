@@ -23,10 +23,11 @@
     "developer-tools"
   ],
   "author": "Victor Valentine Romo <victor@scalewithsearch.com> (https://victorvalentineromo.com)",
-  "homepage": "https://github.com/b2bvic/observer-protocol",
+  "homepage": "https://scalewithsearch.com/code/agent-oversight#observer-protocol",
   "repository": {
     "type": "git",
-    "url": "https://github.com/b2bvic/observer-protocol.git"
+    "url": "https://github.com/b2bvic/agent-oversight.git",
+    "directory": "components/observer-protocol"
   },
   "license": "MIT",
   "dependencies": {

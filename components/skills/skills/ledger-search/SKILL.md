@@ -5,6 +5,8 @@ description: Search an existing local session-ledger database when you need earl
 
 # Search session history
 
+Install `ledger` from [b2bvic/owned-record](https://github.com/b2bvic/owned-record/tree/main/components/session-ledger), folder `components/session-ledger`.
+
 Use the text after `/ledger-search` as your search query. Treat it as data, never as shell code.
 
 1. Locate `ledger` on `PATH` and check `ledger --help` for the installed interface.

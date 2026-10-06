@@ -3,15 +3,15 @@
 Agent-monitor reports local Claude Code and Codex CLI processes and recorded usage for operators who use hosted models.
 It helps you inspect running sessions without treating process counts as completed work.
 
-[Project page](https://scalewithsearch.com/code/agent-monitor)
+[Project page](https://scalewithsearch.com/code/agent-oversight#agent-monitor)
 
 ## Install
 
 Use Python 3.11 or newer and Git. The runtime uses the Python standard library.
 
 ```bash
-git clone https://github.com/b2bvic/agent-monitor.git
-cd agent-monitor
+git clone https://github.com/b2bvic/agent-oversight.git
+cd agent-oversight/components/agent-monitor
 ```
 
 For a source installation after review:
@@ -70,12 +70,12 @@ python3 -m unittest discover -s tests -v
 
 See [Build a macOS release](RELEASING.md) before packaging a source change.
 
-## Related repositories
+## Related components
 
-- [agent-oversight](https://github.com/b2bvic/agent-oversight): orchestration cluster and evaluation guide.
-- [session-ledger](https://github.com/b2bvic/session-ledger): searchable transcript archive.
-- [observer-daemon](https://github.com/b2bvic/observer-daemon): configured response checks.
-- [skills](https://github.com/b2bvic/skills): local oversight helpers.
+- [agent-oversight](../../README.md): orchestration cluster and evaluation guide.
+- [session-ledger](https://github.com/b2bvic/owned-record/tree/main/components/session-ledger): searchable transcript archive.
+- [observer-daemon](../observer-daemon/README.md): configured response checks.
+- [skills](../skills/README.md): local oversight helpers.
 
 ## How this was built
 

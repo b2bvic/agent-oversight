@@ -8,6 +8,7 @@ description: Check a response against an observer-daemon spec and report whether
 Use the response-file and spec-file paths supplied with `/gate-check`.
 If either path is missing, ask for it. Do not guess a private config location.
 You need Python 3.11+ and `observer-daemon` on `PATH`.
+Build it from `agent-oversight/components/observer-daemon` using the `agent-oversight/components/observer-daemon/README.md` in your checkout.
 
 Run the bundled helper with safely quoted paths:
 

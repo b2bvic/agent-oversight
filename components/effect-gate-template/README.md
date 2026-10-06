@@ -5,15 +5,15 @@ It blocks requests without matching authorization before the adapter runs.
 
 It shows patterns a team can adopt, extracted from a single-operator multi-agent workflow.
 
-[Project page](https://scalewithsearch.com/code/effect-gate-template)
+[Project page](https://scalewithsearch.com/code/agent-oversight#effect-gate-template)
 
 ## Install
 
 Use Python 3.11 or later. The runtime uses the Python standard library.
 
 ```sh
-git clone https://github.com/b2bvic/effect-gate-template.git
-cd effect-gate-template
+git clone https://github.com/b2bvic/agent-oversight.git
+cd agent-oversight/components/effect-gate-template
 ```
 
 ## Quick start
@@ -61,8 +61,8 @@ git diff --check
 
 The CI workflow runs these checks on each push and pull request.
 
-## Related repositories
+## Related components
 
-- [safe-api](https://github.com/b2bvic/safe-api)
-- [agent-oversight](https://github.com/b2bvic/agent-oversight)
+- [safe-api](../safe-api/README.md)
+- [agent-oversight](../../README.md)
 - [owned-record](https://github.com/b2bvic/owned-record)

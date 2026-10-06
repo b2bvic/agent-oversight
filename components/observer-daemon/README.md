@@ -3,15 +3,15 @@
 Observer-daemon scores agent responses against configured writing rules for operators who review hosted-model output.
 It records response violations so repeated failures remain visible across Claude Code and Codex CLI sessions.
 
-[Project page](https://scalewithsearch.com/code/observer-daemon)
+[Project page](https://scalewithsearch.com/code/agent-oversight#observer-daemon)
 
 ## Install
 
 Use Rust 1.88 or newer and Cargo on macOS or Linux.
 
 ```bash
-git clone https://github.com/b2bvic/observer-daemon.git
-cd observer-daemon
+git clone https://github.com/b2bvic/agent-oversight.git
+cd agent-oversight/components/observer-daemon
 cargo build --locked
 ```
 
@@ -78,12 +78,12 @@ cargo clippy --locked --all-targets -- -D warnings
 
 See [Build a macOS release](RELEASING.md) for packaging.
 
-## Related repositories
+## Related components
 
-- [agent-oversight](https://github.com/b2bvic/agent-oversight): orchestration cluster and evaluation guide.
-- [skills](https://github.com/b2bvic/skills): quality threshold and local artifact checks.
-- [observer-protocol](https://github.com/b2bvic/observer-protocol): Markdown intake and local review records.
-- [session-ledger](https://github.com/b2bvic/session-ledger): searchable transcript archive.
+- [agent-oversight](../../README.md): orchestration cluster and evaluation guide.
+- [skills](../skills/README.md): quality threshold and local artifact checks.
+- [observer-protocol](../observer-protocol/README.md): Markdown intake and local review records.
+- [session-ledger](https://github.com/b2bvic/owned-record/tree/main/components/session-ledger): searchable transcript archive.
 
 ## How this was built
 
