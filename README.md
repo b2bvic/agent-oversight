@@ -1,34 +1,26 @@
-# Agent oversight for Claude Code and Codex CLI
+# agent-oversight
 
-Agent-oversight collects response checks, process observations, review receipts, and action controls in one repository.
-Use it with teams that run Claude Code and Codex CLI on hosted models.
-You choose the components you need and connect them to your own review and approval workflow.
+Check agent work from outside the agent. Seven small tools score Claude Code and Codex CLI responses against your writing rules, show which sessions run and what they consumed, bind code review receipts to file hashes, and hold REST writes in dry-run until a human turns execution on.
+Each tool runs on its own, keeps its tests in its folder, and reports what it checked instead of claiming the task is done.
 
 [Project page](https://scalewithsearch.com/code/agent-oversight)
 
-## Install
+A hosted-model agent can write fluent text about work it did not finish, and a second agent that reviews the first inherits the same blind spots.
+These components came from one operator running several Claude Code and Codex sessions at once. They check evidence: the response text, the process table, the file digest, the HTTP payload.
 
-Clone once. Each component keeps its source, tests, documentation, and license under `components/`.
+## Quick start
+
+Clone once. Python 3.11 or newer runs the hub fixtures and five components. observer-daemon needs Rust 1.88 or newer; observer-protocol needs Node.js 22 or 24.
 
 ```bash
 git clone https://github.com/b2bvic/agent-oversight.git
 cd agent-oversight
-```
-
-Use Python 3.11 or newer for the hub fixtures and Python components.
-Observer-daemon needs Rust 1.88 or newer and Cargo. Observer-protocol needs Node.js 22 or 24 and npm.
-Follow each component's README before you build or install it.
-The skills installer targets Claude Code; it does not install a Codex CLI adapter.
-
-## Quick start
-
-Run the synthetic hub fixtures without reading private transcripts:
-
-```bash
 python3 -m unittest discover -s tests -v
 ```
 
-Check a response with observer-daemon using isolated ledger paths:
+The four hub tests read the synthetic transcripts in `examples/` and contain no personal session data.
+
+Score one response with observer-daemon, with ledger paths kept inside the checkout:
 
 ```bash
 cd components/observer-daemon
@@ -37,33 +29,38 @@ sed 's|~/.observer/|./.demo/|g' spec.toml.example > .demo/spec.toml
 cargo run --locked -- --config .demo/spec.toml --validate "The file is ready."
 ```
 
-Inspect the [synthetic transcript examples](examples/README.md).
-They cover provider identity collisions, mirrored assistant text, tool correlation, and recorded token fields.
-The hub checks fixture contracts. Component tests check their implementations.
+Expected output: `Class: generic`, `Score: 100/100`, `No violations.`
+
+Refuse an unauthorized action with effect-gate-template, offline:
+
+```bash
+cd components/effect-gate-template
+python3 examples/demo.py
+```
+
+The fixture prints a `denied` receipt for a request without authorization, then `authorized` and `completed` receipts for a matching synthetic authorization against an in-memory stub.
 
 ## Components
 
 | Component | Purpose | Runtime |
 |---|---|---|
 | [observer-daemon](#observer-daemon) | Score responses against configured writing rules. | Rust |
-| [agent-monitor](#agent-monitor) | Observe local processes and recorded usage. | Python standard library |
+| [agent-monitor](#agent-monitor) | Report local Claude and Codex processes and recorded token usage. | Python standard library |
 | [observer-protocol](#observer-protocol) | Capture Markdown intake, corrections, and local draft status. | Node.js |
 | [swarm-contract](#swarm-contract) | Check packet ownership and file-bound review receipts. | Python standard library |
-| [effect-gate-template](#effect-gate-template) | Check structured authorization before calling an adapter. | Python standard library |
+| [effect-gate-template](#effect-gate-template) | Check structured authorization before an adapter runs. | Python standard library |
 | [safe-api](#safe-api) | Apply dry-run, scope, and breaker controls to REST writes. | Python standard library |
-| [skills](#skills) | Search sessions, select context, and check declared local artifacts. | Claude Code and Python |
+| [skills](#skills) | Eight Claude Code skills for session search, context selection, and artifact checks. | Claude Code and Python |
 
-Each component command below starts from the repository root.
+Every command below starts from the repository root.
 
 <a id="observer-daemon"></a>
 
 ## observer-daemon
 
-[Source and instructions](components/observer-daemon/README.md)
-
-Score agent responses against configured writing rules.
-The daemon reads supported Claude and Codex JSONL records and stores validation results in a local ledger.
-A writing score does not verify facts, completed work, or permission to act.
+Scores a response against the writing rules in a TOML spec and records violations in a JSONL ledger.
+In daemon mode it watches Claude Code and Codex JSONL transcript paths you configure.
+A writing score does not verify facts, completed work, or permission to act. [Source and instructions](components/observer-daemon/README.md)
 
 ```bash
 cd components/observer-daemon
@@ -74,10 +71,8 @@ cargo test --locked
 
 ## agent-monitor
 
-[Source and instructions](components/agent-monitor/README.md)
-
-Inspect local Claude and Codex processes and recorded usage across project and session directories.
-Read coverage warnings with the counts. Process status does not prove completion or account billing totals.
+Lists running Claude and Codex processes and sums recorded token usage from local project and session directories, with coverage warnings when a source is missing.
+A live process does not prove task completion, and recorded tokens are not a billing total. [Source and instructions](components/agent-monitor/README.md)
 
 ```bash
 cd components/agent-monitor
@@ -88,10 +83,8 @@ python3 -m unittest discover -s tests -v
 
 ## observer-protocol
 
-[Source and instructions](components/observer-protocol/README.md)
-
-Capture Markdown intake, correction history, and local drafts.
-Review heuristic findings against their source. Draft approval changes local status and requires a separate action service.
+Stores intake as Markdown, corrections as JSONL, and loop drafts as YAML, and runs heuristic pattern analysis over recent files.
+Approving a draft changes its local status. Publishing needs a separate action service that checks authorization. [Source and instructions](components/observer-protocol/README.md)
 
 ```bash
 cd components/observer-protocol
@@ -103,10 +96,9 @@ npm test
 
 ## swarm-contract
 
-[Source and instructions](components/swarm-contract/README.md)
-
-Check disjoint packet ownership and review receipts bound to listed file hashes.
-Changed content invalidates a receipt. You must verify review provenance and include every changed file.
+Validates a packet manifest for disjoint file ownership and checks review receipts whose fingerprint covers SHA-256 hashes of the listed files.
+Changed content invalidates the receipt. The reviewer must differ from the worker, and test and lint status must both be `pass`.
+The checker cannot authenticate the reviewer or confirm that tests ran. [Source and instructions](components/swarm-contract/README.md)
 
 ```bash
 cd components/swarm-contract
@@ -117,10 +109,8 @@ python3 -m unittest discover -s tests -v
 
 ## effect-gate-template
 
-[Source and instructions](components/effect-gate-template/README.md)
-
-Bind authorization to the action, account, target, and payload before calling a local adapter.
-The template records receipts around execution. You must supply trusted authorization and protect direct adapter access.
+Binds authorization to a digest of the action, account, target, and payload, and refuses to call the adapter when the digest does not match.
+You supply trusted authorization. An `approved_by` string does not authenticate a human, and direct adapter calls bypass the gate. [Source and instructions](components/effect-gate-template/README.md)
 
 ```bash
 cd components/effect-gate-template
@@ -131,10 +121,8 @@ python3 -m unittest discover -s tests -v
 
 ## safe-api
 
-[Source and instructions](components/safe-api/README.md)
-
-Wrap REST writes with dry-run, scope, duplicate-callback, and circuit-breaker controls.
-Configure the destination and allowed endpoints. Execution settings do not prove human approval.
+Wraps `post`, `put`, `patch`, and `delete` with an endpoint allowlist, an optional duplicate callback, a failure and rate circuit breaker, and JSONL logs.
+`execute=False` records the intended write and sends nothing. `execute=True` sends one urllib request per call, and that setting is not evidence of human approval. [Source and instructions](components/safe-api/README.md)
 
 ```bash
 cd components/safe-api
@@ -145,33 +133,30 @@ python3 -m unittest discover -s tests -v
 
 ## skills
 
-[Source and instructions](components/skills/README.md)
-
-Install eight Claude Code skills for session search, context selection, response checks, and local artifact checks.
-Use agent-monitor and observer-daemon from this repository for their corresponding helpers.
-Install `ledger` from [b2bvic/owned-record](https://github.com/b2bvic/owned-record/tree/main/components/session-ledger), folder `components/session-ledger`.
+Installs eight Claude Code skills: `/ledger-search`, `/agent-status`, `/gate-check`, `/completion-check`, `/vault-route`, `/vault-context`, `/vault-log`, and `/vault-handoff`.
+`install.py` copies the folders into `~/.claude/skills/` and refuses to overwrite an existing name. Skill text guides the model; it enforces nothing.
+`/ledger-search` needs `ledger` from [owned-record](https://github.com/b2bvic/owned-record/tree/main/components/session-ledger). [Source and instructions](components/skills/README.md)
 
 ```bash
 cd components/skills
 python3 -m unittest discover -s tests -v
 ```
 
-## Review and action boundaries
+## What these tools do not do
 
-The components run independently. You supply coordination, scheduling, and approval integration.
-Use [Evaluate the stack](EVALUATION.md) to record inputs, revisions, failures, and missing evidence.
-Verify outcomes against output artifacts or the destination before you accept a completion claim.
-Enforce authorization where an external action executes.
+- No component reads your private transcripts until you configure its paths. The shipped fixtures and demos are synthetic.
+- No component authorizes an action. Scores, receipts, and dry-run logs are evidence for your approval step, which runs in the executing service.
+- The repository holds no measured team deployment or model benchmark. [EVALUATION.md](EVALUATION.md) describes how to record one.
+- The skills installer targets Claude Code. There is no Codex CLI hook adapter.
 
-The examples are synthetic. This repository contains no measured team deployment or comparative model benchmark.
-See [owned-record](https://github.com/b2bvic/owned-record) for transcript archives and the owned memory components.
+For transcript archives and owned context files, see [owned-record](https://github.com/b2bvic/owned-record).
 
 ## How this was built
 
 This README was written with model assistance in 2026. The code and tests in this repository are the evidence; read them to judge the tool.
-The agent-monitor, observer-daemon, and safe-api component READMEs retain the same model-assistance disclosure.
-Component histories are imported with Git subtree merges without squashing.
+The agent-monitor, observer-daemon, and safe-api component READMEs carry the same disclosure.
+Component histories were imported with Git subtree merges without squashing.
 
 ## License
 
-[MIT](LICENSE). Every component retains its MIT license in its own folder.
+[MIT](LICENSE). Every component keeps its MIT license in its own folder.
