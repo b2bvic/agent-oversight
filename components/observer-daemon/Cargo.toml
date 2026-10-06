@@ -1,0 +1,25 @@
+[package]
+name = "observer-daemon"
+version = "0.1.1"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+description = "Score agent responses against configured writing rules. Inspect Claude Code and Codex transcripts and record response violations."
+authors = ["Victor Valentine Romo <victor@scalewithsearch.com>"]
+
+[dependencies]
+toml = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+aho-corasick = "1"
+notify = "7"
+chrono = { version = "0.4", features = ["serde"] }
+signal-hook = "0.3"
+log = "0.4"
+env_logger = "0.11"
+
+[profile.release]
+strip = true
+lto = true
+opt-level = "s"

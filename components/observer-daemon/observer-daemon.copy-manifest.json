@@ -1,0 +1,132 @@
+{
+  "source_path": ".",
+  "generated_timestamp": "2026-10-05T21:28:17.296555+00:00",
+  "file_count": 31,
+  "files": [
+    {
+      "path": ".github/dependabot.yml",
+      "sha256": "3c25a10296b154dd8cb1a5dc0f33c89243bda839f0f1d76c4398a70bf83a04e0"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "f9a30d79db458caa1a4b1032cb77b74169ce732b2f72171da1d3c5a0ffe691f8"
+    },
+    {
+      "path": ".gitignore",
+      "sha256": "9a7d8d4fdeedac0ba30f55c6f51cbc9160626822af0c9c2f858512784b478682"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "sha256": "b0ab68f7cc80e08a3a5497c98cc98e4854343fb654a87986a74999d50288e5fc"
+    },
+    {
+      "path": "Cargo.lock",
+      "sha256": "89167a928b5d77acbd2ba496bfba9f81d18a09115a88c7fa70812a7e395eb830"
+    },
+    {
+      "path": "Cargo.toml",
+      "sha256": "88ef06adc74cb613cf716d3288ec9e1bf9453f7c5acfbe9b9b9dcbb5d79e2dab"
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "d6271cbb3783089756396127fc69bb5febb2999d2e0f81653aa56c42f782819a"
+    },
+    {
+      "path": "README.md",
+      "sha256": "9531acd2a4913560e8155f2de6867d10b5347c8b80d539ff5787553d35a90076"
+    },
+    {
+      "path": "RELEASING.md",
+      "sha256": "0a15edb477c6c631dee186fe5924d22976160fc46541c91be15d8ea7567f7740"
+    },
+    {
+      "path": "SECURITY.md",
+      "sha256": "5ae60aad1dca2bd9aeb64a2037994f2893a173c25e761f9ceb20ba5e766be8ed"
+    },
+    {
+      "path": "spec.toml.example",
+      "sha256": "a95f94a94897882b0db2326afe59cba1adff2ec87ce3411a34d20db4b2656432"
+    },
+    {
+      "path": "src/config.rs",
+      "sha256": "4bf0c737de63815d4b2c3c950d292f043d2ec8e456d3e6364b5525af1f72753a"
+    },
+    {
+      "path": "src/corrections.rs",
+      "sha256": "69680c4bc6ccf86941a62d059efcde9eb19ef1d8c82d4ae1de9a078620e88d48"
+    },
+    {
+      "path": "src/main.rs",
+      "sha256": "1be23a010303691c54acce08be8192a88d50385b268e2a25a221b1d37d13acbc"
+    },
+    {
+      "path": "src/rubric.rs",
+      "sha256": "ac93e072fb887d14dab8e1be283ddafda229cb962ebcb5463b082c7345c12378"
+    },
+    {
+      "path": "src/session.rs",
+      "sha256": "52474dfbfeae548a0a478a75af8bb9862a833d88a96c8fae10beb2268cb46630"
+    },
+    {
+      "path": "src/validator.rs",
+      "sha256": "7dc778a884bf872a2235c497bed37a140e9716df745086c0195422f1d5625407"
+    },
+    {
+      "path": "src/validators/badverbs.rs",
+      "sha256": "6dcfc4b8caa52421c0874ea5a498ba8de94036566380fb4c130e5fcca007e89d"
+    },
+    {
+      "path": "src/validators/context_time.rs",
+      "sha256": "6f2e567bc63d3153cf9379d166c316896ffa1670ebde4ce3c19644bddb9c6657"
+    },
+    {
+      "path": "src/validators/crutch.rs",
+      "sha256": "83aa63ce860877314cfb090a6d48536a800f5d06232be3a63eb196bbb406af20"
+    },
+    {
+      "path": "src/validators/filler.rs",
+      "sha256": "796da869ac790e35bf1270adb260677955b2f958620ea3393c246ad37328e3b5"
+    },
+    {
+      "path": "src/validators/floate.rs",
+      "sha256": "a60087e5c8a33ac557a204faa1609362f43369a147c3a3c93a1f881f2aa50ef8"
+    },
+    {
+      "path": "src/validators/layers.rs",
+      "sha256": "92ca6e9a314d1b733fff33df601c1a035841d3ba99d307152467919b968e1987"
+    },
+    {
+      "path": "src/validators/lexical.rs",
+      "sha256": "c78b251d37e8a40aef9a85aa3368e78af5756b35f6605a190a5c66489f1aa893"
+    },
+    {
+      "path": "src/validators/mod.rs",
+      "sha256": "c836654b3e93cdf141b210b723366014daa2fe6007d401e4570b51f0332e172d"
+    },
+    {
+      "path": "src/validators/policy_pack.rs",
+      "sha256": "303d9c81916a1eb708e891ef7f9c367cfcb23183866b9fc07d5913e3b407cfd1"
+    },
+    {
+      "path": "src/validators/punctuation.rs",
+      "sha256": "89b0e2f0d3442991d6110eee76d6bd1c09a2bd27610b87ac704dbfa5a5390f8a"
+    },
+    {
+      "path": "src/validators/rhythm.rs",
+      "sha256": "e07b3364d7d6be27ac98d51c87608ec132213f708a6f5c991ed789c14bf80eca"
+    },
+    {
+      "path": "src/validators/sycophancy.rs",
+      "sha256": "a635b8adbb3572d229872bda320ad513a340ac7e89c0bf2662edcb4b870d1df9"
+    },
+    {
+      "path": "src/validators/tells.rs",
+      "sha256": "c2e0f60648e2218a8654c96e9e42e6af035c8cb63b48d2e59e0ca1f8dbdb7e97"
+    },
+    {
+      "path": "src/watcher.rs",
+      "sha256": "8dc2fbcded390e8bc36fa1aff00bf1247ecd90c3401707b5ed28493a004b0bee"
+    }
+  ],
+  "scope_note": "Current candidate branch files after scrub. Manifest and allowlist are listed but excluded from recursive hashing."
+}
