@@ -16,7 +16,7 @@ import sys
 import time
 import urllib.request
 import urllib.error
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlencode
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -160,7 +160,7 @@ class SafeAPIClient:
             "failure_count": self._failure_count,
             "writes_last_60s": len(self._write_timestamps),
         }
-        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
         incident_file = self._incident_dir / f"incident-{self.name}-{ts}.json"
         incident_file.write_text(json.dumps(incident, indent=2))
         print(f"CIRCUIT BREAKER TRIPPED: {reason}", file=sys.stderr)
@@ -178,7 +178,7 @@ class SafeAPIClient:
         """GET request — always allowed, no safety gates."""
         url = f"{self.base_url}{endpoint}"
         if params:
-            qs = "&".join(f"{k}={v}" for k, v in params.items())
+            qs = urlencode(params, doseq=True)
             url = f"{url}?{qs}"
 
         req = urllib.request.Request(url)
@@ -278,9 +278,13 @@ class SafeAPIClient:
                 error_body = e.read().decode()
             except Exception:
                 pass
+            finally:
+                e.close()
             audit_entry["action"] = "FAILED"
             audit_entry["error"] = f"HTTP {e.code}: {error_body}"
             self._log_write(audit_entry)
+            if self._failure_count >= self.max_failures:
+                self._trip_breaker(f"{self._failure_count}+ failures in this session")
             return {"error": f"HTTP {e.code}", "detail": error_body}
 
         except Exception as e:
@@ -288,6 +292,8 @@ class SafeAPIClient:
             audit_entry["action"] = "FAILED"
             audit_entry["error"] = str(e)
             self._log_write(audit_entry)
+            if self._failure_count >= self.max_failures:
+                self._trip_breaker(f"{self._failure_count}+ failures in this session")
             return {"error": str(e)}
 
     # --- Utilities ---
